@@ -5,6 +5,34 @@ date: "September 15, 2016"
 output: html_document
 ---
 
-Option 3
+# Scientific Question
 
-Develop a model for predicting life expectancy in Baltimore down to single block resolution with estimates of uncertainty. You may need to develop an approach for "downsampling" since the outcome data you'll be able to find is likely aggregated at the neighborhood level (http://health.baltimorecity.gov/node/231).
+Develop a model for predicting life expectancy at birth in Baltimore down to single block resolution with estimates of uncertainty. 
+
+# Preparation
+## Dataset (potential predictors)
+Demographics: Age, gender, race...
+
+Socioeconomic Characteristics: Income, Employment rate, poverty rate, percent of single-parent households...
+
+Education: Reading proficiency, School absenteeism, adult education attainment... 
+
+Community Built and Social Environment: Alcohol/tobacco store density, juvenile arrest rate, domestic violence rate...
+
+Housing: Lead paint violation rate, energy cut-off rate, vacant building density...
+
+Food Environment: Fast food density, carryout density, corner store density, supermarket proximity...
+
+Health Outcomes: Life expectancy and premature mortality, avertable deaths, top ten casuses of death...
+
+## Explore Data
+
+```{r}
+
+data.census<-read.csv(file="VS-14-Census-2010-2014-1.csv",header=T,skip=1,check.names = F)
+rownames(data.census)<-data.census[,1]
+data.census<-data.census[,-1]
+names(data.census)
+head(data.census)
+
+```

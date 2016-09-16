@@ -123,8 +123,247 @@ $(document).ready(function () {
 </div>
 
 
-<p>Option 3</p>
-<p>Develop a model for predicting life expectancy in Baltimore down to single block resolution with estimates of uncertainty. You may need to develop an approach for “downsampling” since the outcome data you’ll be able to find is likely aggregated at the neighborhood level (<a href="http://health.baltimorecity.gov/node/231" class="uri">http://health.baltimorecity.gov/node/231</a>).</p>
+<div id="scientific-question" class="section level1">
+<h1>Scientific Question</h1>
+<p>Develop a model for predicting life expectancy at birth in Baltimore down to single block resolution with estimates of uncertainty.</p>
+</div>
+<div id="preparation" class="section level1">
+<h1>Preparation</h1>
+<div id="dataset-potential-predictors" class="section level2">
+<h2>Dataset (potential predictors)</h2>
+<p>Demographics: Age, gender, race…</p>
+<p>Socioeconomic Characteristics: Income, Employment rate, poverty rate, percent of single-parent households…</p>
+<p>Education: Reading proficiency, School absenteeism, adult education attainment…</p>
+<p>Community Built and Social Environment: Alcohol/tobacco store density, juvenile arrest rate, domestic violence rate…</p>
+<p>Housing: Lead paint violation rate, energy cut-off rate, vacant building density…</p>
+<p>Food Environment: Fast food density, carryout density, corner store density, supermarket proximity…</p>
+<p>Health Outcomes: Life expectancy and premature mortality, avertable deaths, top ten casuses of death…</p>
+</div>
+<div id="explore-data" class="section level2">
+<h2>Explore Data</h2>
+<pre class="r"><code>data.census&lt;-read.csv(file=&quot;VS-14-Census-2010-2014-1.csv&quot;,header=T,skip=1,check.names = F)
+rownames(data.census)&lt;-data.census[,1]
+data.census&lt;-data.census[,-1]
+names(data.census)</code></pre>
+<pre><code>##  [1] &quot;Total Population (2010)&quot;                                                                                        
+##  [2] &quot;Total Male Population (2010)&quot;                                                                                   
+##  [3] &quot;Total Female Population (2010)&quot;                                                                                 
+##  [4] &quot;Percent of Residents - Black/African-American (2010)&quot;                                                           
+##  [5] &quot;Percent of Residents - White/Caucasian (2010)&quot;                                                                  
+##  [6] &quot;Percent of Residents - Asian (2010)&quot;                                                                            
+##  [7] &quot;Percent of Residents - Two or More Races (2010)&quot;                                                                
+##  [8] &quot;Percent of Residents - All Other Races (Hawaiian/ Pacific Islander, Alaskan/ Native American Other Race) (2010)&quot;
+##  [9] &quot;Percent of Residents - Hispanic (2010)&quot;                                                                         
+## [10] &quot;Racial Diversity Index (2010)&quot;                                                                                  
+## [11] &quot;Percent of Population 0-5 years old (2010)&quot;                                                                     
+## [12] &quot;Percent of Population 6-18 years old (2010)&quot;                                                                    
+## [13] &quot;Percent of Population 19-24 years old (2010)&quot;                                                                   
+## [14] &quot;Percent of Population 25-64 years old (2010)&quot;                                                                   
+## [15] &quot;Percent of Population 65 years and over (2010)&quot;                                                                 
+## [16] &quot;Total Number of Households (2010)&quot;                                                                              
+## [17] &quot;Percent of Female-Headed Households with Children under 18 (2010)&quot;                                              
+## [18] &quot;Percent of Households with Children Under 18 (2010)&quot;                                                            
+## [19] &quot;Average Household Size (2010)&quot;                                                                                  
+## [20] &quot;Median Household Income (2010-2014)&quot;                                                                            
+## [21] &quot;Percent of Households Earning Less than $25,000 (2010-2014)&quot;                                                    
+## [22] &quot;Percent of Households Earning $25,000 to $40,000 (2010-2014)&quot;                                                   
+## [23] &quot;Percent of Households Earning $40,000 to $60,000 (2010-2014)&quot;                                                   
+## [24] &quot;Percent of Households Earning $60,000 to $75,000 (2010-2014)&quot;                                                   
+## [25] &quot;Percent of Households Earning More than $75,000 (2010-2014)&quot;                                                    
+## [26] &quot;Percent of Family Households Living Below the Poverty Line (2010-2014)&quot;                                         
+## [27] &quot;Percent of Children Living Below the Poverty Line (2010-2014)&quot;</code></pre>
+<pre class="r"><code>head(data.census)</code></pre>
+<pre><code>##                                   Total Population (2010)
+## Allendale/Irvington/S. Hilton                      16,217
+## Beechfield/Ten Hills/West Hills                    12,264
+## Belair-Edison                                      17,416
+## Brooklyn/Curtis Bay/Hawkins Point                  14,243
+## Canton                                              8,100
+## Cedonia/Frankford                                  23,557
+##                                   Total Male Population (2010)
+## Allendale/Irvington/S. Hilton                            7,246
+## Beechfield/Ten Hills/West Hills                          5,566
+## Belair-Edison                                            7,891
+## Brooklyn/Curtis Bay/Hawkins Point                        6,981
+## Canton                                                   4,011
+## Cedonia/Frankford                                       10,788
+##                                   Total Female Population (2010)
+## Allendale/Irvington/S. Hilton                              8,971
+## Beechfield/Ten Hills/West Hills                            6,698
+## Belair-Edison                                              9,525
+## Brooklyn/Curtis Bay/Hawkins Point                          7,262
+## Canton                                                     4,089
+## Cedonia/Frankford                                         12,769
+##                                   Percent of Residents - Black/African-American (2010)
+## Allendale/Irvington/S. Hilton                                                     88.2
+## Beechfield/Ten Hills/West Hills                                                   78.9
+## Belair-Edison                                                                     86.9
+## Brooklyn/Curtis Bay/Hawkins Point                                                 35.9
+## Canton                                                                             4.0
+## Cedonia/Frankford                                                                 78.5
+##                                   Percent of Residents - White/Caucasian (2010)
+## Allendale/Irvington/S. Hilton                                               8.3
+## Beechfield/Ten Hills/West Hills                                            16.8
+## Belair-Edison                                                               9.9
+## Brooklyn/Curtis Bay/Hawkins Point                                          47.8
+## Canton                                                                     86.0
+## Cedonia/Frankford                                                          15.1
+##                                   Percent of Residents - Asian (2010)
+## Allendale/Irvington/S. Hilton                                     0.5
+## Beechfield/Ten Hills/West Hills                                   0.8
+## Belair-Edison                                                     0.5
+## Brooklyn/Curtis Bay/Hawkins Point                                 1.7
+## Canton                                                            3.4
+## Cedonia/Frankford                                                 2.3
+##                                   Percent of Residents - Two or More Races (2010)
+## Allendale/Irvington/S. Hilton                                                 1.3
+## Beechfield/Ten Hills/West Hills                                               1.5
+## Belair-Edison                                                                 1.1
+## Brooklyn/Curtis Bay/Hawkins Point                                             4.1
+## Canton                                                                        1.3
+## Cedonia/Frankford                                                             1.8
+##                                   Percent of Residents - All Other Races (Hawaiian/ Pacific Islander, Alaskan/ Native American Other Race) (2010)
+## Allendale/Irvington/S. Hilton                                                                                                                 0.5
+## Beechfield/Ten Hills/West Hills                                                                                                               0.4
+## Belair-Edison                                                                                                                                 0.3
+## Brooklyn/Curtis Bay/Hawkins Point                                                                                                             0.7
+## Canton                                                                                                                                        0.4
+## Cedonia/Frankford                                                                                                                             0.4
+##                                   Percent of Residents - Hispanic (2010)
+## Allendale/Irvington/S. Hilton                                        1.3
+## Beechfield/Ten Hills/West Hills                                      1.6
+## Belair-Edison                                                        1.2
+## Brooklyn/Curtis Bay/Hawkins Point                                    9.8
+## Canton                                                               5.0
+## Cedonia/Frankford                                                    2.0
+##                                   Racial Diversity Index (2010)
+## Allendale/Irvington/S. Hilton                              22.9
+## Beechfield/Ten Hills/West Hills                            36.2
+## Belair-Edison                                              24.6
+## Brooklyn/Curtis Bay/Hawkins Point                          66.7
+## Canton                                                     28.3
+## Cedonia/Frankford                                          37.5
+##                                   Percent of Population 0-5 years old (2010)
+## Allendale/Irvington/S. Hilton                                            6.6
+## Beechfield/Ten Hills/West Hills                                          6.5
+## Belair-Edison                                                            6.9
+## Brooklyn/Curtis Bay/Hawkins Point                                       10.2
+## Canton                                                                   4.1
+## Cedonia/Frankford                                                        7.3
+##                                   Percent of Population 6-18 years old (2010)
+## Allendale/Irvington/S. Hilton                                            18.4
+## Beechfield/Ten Hills/West Hills                                          16.7
+## Belair-Edison                                                            20.2
+## Brooklyn/Curtis Bay/Hawkins Point                                        18.2
+## Canton                                                                    3.0
+## Cedonia/Frankford                                                        17.2
+##                                   Percent of Population 19-24 years old (2010)
+## Allendale/Irvington/S. Hilton                                             10.3
+## Beechfield/Ten Hills/West Hills                                           10.2
+## Belair-Edison                                                             10.9
+## Brooklyn/Curtis Bay/Hawkins Point                                         11.1
+## Canton                                                                    10.5
+## Cedonia/Frankford                                                         11.6
+##                                   Percent of Population 25-64 years old (2010)
+## Allendale/Irvington/S. Hilton                                             51.9
+## Beechfield/Ten Hills/West Hills                                           56.2
+## Belair-Edison                                                             54.0
+## Brooklyn/Curtis Bay/Hawkins Point                                         53.5
+## Canton                                                                    71.5
+## Cedonia/Frankford                                                         55.3
+##                                   Percent of Population 65 years and over (2010)
+## Allendale/Irvington/S. Hilton                                               12.8
+## Beechfield/Ten Hills/West Hills                                             10.5
+## Belair-Edison                                                                8.0
+## Brooklyn/Curtis Bay/Hawkins Point                                            7.1
+## Canton                                                                      10.9
+## Cedonia/Frankford                                                            8.7
+##                                   Total Number of Households (2010)
+## Allendale/Irvington/S. Hilton                                6,098 
+## Beechfield/Ten Hills/West Hills                              5,076 
+## Belair-Edison                                                6,174 
+## Brooklyn/Curtis Bay/Hawkins Point                            5,204 
+## Canton                                                       4,310 
+## Cedonia/Frankford                                            9,348 
+##                                   Percent of Female-Headed Households with Children under 18 (2010)
+## Allendale/Irvington/S. Hilton                                                                  63.6
+## Beechfield/Ten Hills/West Hills                                                                51.4
+## Belair-Edison                                                                                  63.7
+## Brooklyn/Curtis Bay/Hawkins Point                                                              51.0
+## Canton                                                                                         19.8
+## Cedonia/Frankford                                                                              55.3
+##                                   Percent of Households with Children Under 18 (2010)
+## Allendale/Irvington/S. Hilton                                                    35.9
+## Beechfield/Ten Hills/West Hills                                                  33.6
+## Belair-Edison                                                                    40.6
+## Brooklyn/Curtis Bay/Hawkins Point                                                39.5
+## Canton                                                                            8.8
+## Cedonia/Frankford                                                                34.5
+##                                   Average Household Size (2010)
+## Allendale/Irvington/S. Hilton                               2.6
+## Beechfield/Ten Hills/West Hills                             2.4
+## Belair-Edison                                               2.9
+## Brooklyn/Curtis Bay/Hawkins Point                           2.6
+## Canton                                                      1.9
+## Cedonia/Frankford                                           2.5
+##                                   Median Household Income (2010-2014)
+## Allendale/Irvington/S. Hilton                              35,958.25 
+## Beechfield/Ten Hills/West Hills                            52,622.69 
+## Belair-Edison                                              38,905.92 
+## Brooklyn/Curtis Bay/Hawkins Point                          35,861.90 
+## Canton                                                     91,735.65 
+## Cedonia/Frankford                                          39,306.14 
+##                                   Percent of Households Earning Less than $25,000 (2010-2014)
+## Allendale/Irvington/S. Hilton                                                            35.6
+## Beechfield/Ten Hills/West Hills                                                          20.1
+## Belair-Edison                                                                            32.7
+## Brooklyn/Curtis Bay/Hawkins Point                                                        33.6
+## Canton                                                                                    9.4
+## Cedonia/Frankford                                                                        30.1
+##                                   Percent of Households Earning $25,000 to $40,000 (2010-2014)
+## Allendale/Irvington/S. Hilton                                                             19.4
+## Beechfield/Ten Hills/West Hills                                                           17.5
+## Belair-Edison                                                                             18.5
+## Brooklyn/Curtis Bay/Hawkins Point                                                         19.8
+## Canton                                                                                     8.3
+## Cedonia/Frankford                                                                         20.9
+##                                   Percent of Households Earning $40,000 to $60,000 (2010-2014)
+## Allendale/Irvington/S. Hilton                                                             16.6
+## Beechfield/Ten Hills/West Hills                                                           20.3
+## Belair-Edison                                                                             17.5
+## Brooklyn/Curtis Bay/Hawkins Point                                                         19.7
+## Canton                                                                                    13.1
+## Cedonia/Frankford                                                                         19.4
+##                                   Percent of Households Earning $60,000 to $75,000 (2010-2014)
+## Allendale/Irvington/S. Hilton                                                             12.5
+## Beechfield/Ten Hills/West Hills                                                           12.9
+## Belair-Edison                                                                              9.4
+## Brooklyn/Curtis Bay/Hawkins Point                                                          9.9
+## Canton                                                                                     7.5
+## Cedonia/Frankford                                                                          9.0
+##                                   Percent of Households Earning More than $75,000 (2010-2014)
+## Allendale/Irvington/S. Hilton                                                            15.9
+## Beechfield/Ten Hills/West Hills                                                          29.2
+## Belair-Edison                                                                            21.8
+## Brooklyn/Curtis Bay/Hawkins Point                                                        17.0
+## Canton                                                                                   61.7
+## Cedonia/Frankford                                                                        20.7
+##                                   Percent of Family Households Living Below the Poverty Line (2010-2014)
+## Allendale/Irvington/S. Hilton                                                                       23.1
+## Beechfield/Ten Hills/West Hills                                                                     11.8
+## Belair-Edison                                                                                       18.1
+## Brooklyn/Curtis Bay/Hawkins Point                                                                   28.4
+## Canton                                                                                               2.8
+## Cedonia/Frankford                                                                                   17.4
+##                                   Percent of Children Living Below the Poverty Line (2010-2014)
+## Allendale/Irvington/S. Hilton                                                              41.5
+## Beechfield/Ten Hills/West Hills                                                            22.3
+## Belair-Edison                                                                              36.9
+## Brooklyn/Curtis Bay/Hawkins Point                                                          46.9
+## Canton                                                                                      6.5
+## Cedonia/Frankford                                                                          26.0</code></pre>
+</div>
+</div>
 
 
 
