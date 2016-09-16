@@ -4,6 +4,12 @@ author: "Yifan Zhou"
 date: "September 15, 2016"
 output: html_document
 ---
+# Lab note:
+ 1. How to enumerate the block?
+ 2. What kinds of data should be used?
+ 3. Right now: Write down the Introduction session (specific question), start the method session.
+ 
+
 
 # Scientific Question
 
