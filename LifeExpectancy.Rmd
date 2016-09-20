@@ -4,16 +4,33 @@ author: "Yifan Zhou"
 date: "September 15, 2016"
 output: html_document
 ---
-# Lab note:
- 1. How to enumerate the block?
- 2. What kinds of data should be used?
- 3. Right now: Write down the Introduction session (specific question), start the method session.
- 
+
+```{r load_package,warning=FALSE,message=FALSE}
+#install.packages("maptools")
+#install.packages("maps")
+#install.packages("rgdal")
+#install.packages("rgeos")
+library(maps)
+library(maptools)
+library(rgdal)
+library(rgeos)
+```
+
+#Lab for this week:
+
+???A specific, quantitative statement of the question you are asking 
+
+A description of the data you (a) have in hand and (b) that you plan to collect
+
+Any analysis/data collection you have done
+
+In an Rmd file ready for display
+
 
 
 # Scientific Question
 
-Develop a model for predicting life expectancy at birth in Baltimore down to single block resolution with estimates of uncertainty. 
+Develop a model for predicting life expectancy in Baltimore down to single block resolution with estimates of uncertainty. 
 
 # Preparation
 ## Dataset (potential predictors)
@@ -33,12 +50,25 @@ Health Outcomes: Life expectancy and premature mortality, avertable deaths, top 
 
 ## Explore Data
 
-```{r}
 
-data.census<-read.csv(file="VS-14-Census-2010-2014-1.csv",header=T,skip=1,check.names = F)
-rownames(data.census)<-data.census[,1]
-data.census<-data.census[,-1]
-names(data.census)
-head(data.census)
+
+```{r input_block_shapefile, eval=FALSE}
+map <- readOGR("./data/blk2010", "blk2010")
+map_wgs84 <- spTransform(map, CRS("+proj=longlat +datum=WGS84"))
+bal<-map_wgs84[map_wgs84@data$CNTY2010==24510,]
+save(bal,file="bal_block.rda")
+```
+
+```{r block_data, fig.height=8,fig.width=8}
+load("./data/bal_block.rda")
+plot(bal,axes=TRUE)
+head(bal@data)
+#dim(bal)
+#bal@polygons[[1]]
+
+# For example, block 245100401001005:
+#bal1000<-bal[bal@data$BLK2010==245100401001005,]
+#plot(bal1000,axes=TRUE)
 
 ```
+
