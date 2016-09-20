@@ -53,6 +53,10 @@ Health Outcomes: Life expectancy and premature mortality, avertable deaths, top 
 
 
 ```{r input_block_shapefile, eval=FALSE}
+block_url<-"http://www.mdp.state.md.us/msdc/census/cen2010/maps/tiger10/blk2010.zip"
+download.file(block_url,destfile="./data/blk2010.zip")
+dir.create("./data/blk2010")
+unzip("./data/blk2010.zip",exdir="./data/blk2010")
 map <- readOGR("./data/blk2010", "blk2010")
 map_wgs84 <- spTransform(map, CRS("+proj=longlat +datum=WGS84"))
 bal<-map_wgs84[map_wgs84@data$CNTY2010==24510,]
@@ -69,6 +73,7 @@ head(bal@data)
 # For example, block 245100401001005:
 #bal1000<-bal[bal@data$BLK2010==245100401001005,]
 #plot(bal1000,axes=TRUE)
+
 
 ```
 
