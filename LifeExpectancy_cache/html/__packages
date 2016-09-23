@@ -1,0 +1,11 @@
+base
+plyr
+ggplot2
+ggmap
+maps
+sp
+maptools
+gpclib
+rgdal
+rgeos
+gridExtra

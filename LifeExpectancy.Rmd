@@ -101,7 +101,7 @@ The inequality in Baltimore has been a big issue: "*Roland Park would be the 4th
 
 For geographic information about blocks in Baltimore, we use the Tiger shape files from [Census 2010](http://www.mdp.state.md.us/msdc/S5_Map_GIS.Shtml), from which we obtained block ID, coordinates and footprint for each block. There are 13488 blocks defined by Census 2010, and we use the polygon center of each block to calculate the map distance between two locations (use Google Maps API through R package "ggmap").
 
-```{r sample block, fig.height=6.5,fig.width=7, warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=1,results='markup'}
+```{r sample block, fig.height=6.5,fig.width=7, warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=TRUE,results='markup'}
 #fellspoint<-bal.nei[bal.nei@data$CSA2010=="Fells Point",]
 fpblk<-bal.blk[bal.blk@data$BG2010%in%c(245100203001,245100203002,245100203003,245100202001,245100202002,245100201001,245100201002,245100105001,245100105002),]
 
@@ -186,6 +186,8 @@ shpdata<-bg1
 ## 1.2 Potential Predictors
 Since life expectancy is associated with many kinds of factors such as family disease history, individual body condition, environment and socioeconomic factors. We consider those following factors as the potential predictors for the predicting model of life expectancy:
 
+Neighborhood level:
+
 Demographics: Age, gender, race...
 
 Socioeconomic Characteristics: Income, Employment rate, poverty rate, percent of single-parent households...
@@ -194,11 +196,20 @@ Education: Reading proficiency, School absenteeism, adult education attainment..
 
 Community Built and Social Environment: Alcohol/tobacco store density, juvenile arrest rate, domestic violence rate...
 
-Housing: Lead paint violation rate, energy cut-off rate, vacant building density...
+Housing: Lead paint violation rate, energy cut-off rate...
 
 Food Environment: Fast food density, carryout density, corner store density, supermarket proximity...
 
-Health Outcomes: Life expectancy and premature mortality, avertable deaths, top ten casuses of death...
+Health Outcomes:premature mortality, avertable deaths, top ten casuses of death...
+
+Block level:
+
+Housing: House density, vacant building density
+
+Food Environment: Nearest distance to food store/supermarket/grocery
+
+Health and Well-Being: Nearest distance to nursing home/shelter
+
 
 
 # 2.Method
