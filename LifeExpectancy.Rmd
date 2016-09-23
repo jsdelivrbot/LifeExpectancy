@@ -4,36 +4,188 @@ author: "Yifan Zhou"
 date: "September 15, 2016"
 output: html_document
 ---
-
-```{r load_package,warning=FALSE,message=FALSE}
+  
+```{r load_package,warning=FALSE,message=FALSE,results='hide'}
 #install.packages("maptools")
 #install.packages("maps")
 #install.packages("rgdal")
 #install.packages("rgeos")
+#install.packages("ggmap")
+#install.packages("ggplot2")
+#install.packages("plyr")
+#install.packages("grid")
+#install.packages("gridExtra")
+library(plyr)
+library(ggplot2)
+library(ggmap)
 library(maps)
 library(maptools)
+if (!require(gpclib)) install.packages("gpclib", type="source")
+gpclibPermit()
 library(rgdal)
 library(rgeos)
+library(grid)
+library(gridExtra)
 ```
 
-#Lab for this week:
+```{r input shapefile, eval=FALSE}
+block_url<-"http://www.mdp.state.md.us/msdc/census/cen2010/maps/tiger10/blk2010.zip"
+download.file(block_url,destfile="./data/blk2010.zip")
+dir.create("./data/blk2010")
+unzip("./data/blk2010.zip",exdir="./data/blk2010")
+map <- readOGR("./data/blk2010", "blk2010")
+map_wgs84 <- spTransform(map, CRS("+proj=longlat +datum=WGS84"))
+bal.blk<-map_wgs84[map_wgs84@data$CNTY2010==24510,]
+save(bal.blk,file="./data/bal_block.rda")
 
-???A specific, quantitative statement of the question you are asking 
+neighbor_url<-"http://bniajfi.org/wp-content/uploads/2016/04/VS-14-Health.zip"
+download.file(neighbor_url,destfile="./data/neighbor.zip")
+unzip("./data/neighbor.zip",exdir="./data/neighbor")
+map.neighbor<-readOGR("./data/neighbor/VS 14 Children & Family Health","VS14_Health")
+bal.nei <- spTransform(map.neighbor, CRS("+proj=longlat +datum=WGS84"))
+save(bal.nei,file="./data/bal_neighbor.rda")
 
-A description of the data you (a) have in hand and (b) that you plan to collect
+```
 
-Any analysis/data collection you have done
+```{r smooth LE4, fig.height=8,fig.width=8, warning=FALSE, message=FALSE, cache=TRUE}
+load("./data/bal_block.rda")
+load("./data/bal_neighbor.rda")
 
-In an Rmd file ready for display
+CenterOfMap <- geocode(" 39.299768,-76.614929")
+Baltimore <- get_map(c(lon=CenterOfMap$lon, lat=CenterOfMap$lat),zoom = 12, maptype = "road", source = "google")
+BaltimoreMap <- ggmap(Baltimore)
+BalHeatmap<-function(shpdata){
+  shpdata@data$id = rownames(shpdata@data)
+  shpdata.points = fortify(shpdata, region="id")
+  shpdata.df = join(shpdata.points, shpdata@data, by="id")
+  bal_heatmap<- BaltimoreMap+
+  geom_polygon(aes(long,lat,group=group,fill=LifeExp14),data=shpdata.df,alpha=0.8,color="#999999",size=0.2)+ 
+  scale_fill_gradient(low = "#ffffcc", high = "#ff4444", space = "Lab", na.value = "grey50",guide = "colourbar")
+
+  return(bal_heatmap)
+}
 
 
+# imput neihgborhood LE14 to block level
+bal.blk@data$LifeExp14<-over(bal.blk,bal.nei)$LifeExp14
 
-# Scientific Question
+#BalHeatmap(bal.blk)  # plot LE4 on block level
 
-Develop a model for predicting life expectancy in Baltimore down to single block resolution with estimates of uncertainty. 
+# creat data frame (tidy data)
+smooth_bal<-function(dataline,dataframe,lim){
+  subdata<-dataframe[ dataframe[,2]>=(as.numeric(dataline[2])-lim) &
+                       dataframe[,2]<=(as.numeric(dataline[2])+lim) &
+                 dataframe[,3]>=(as.numeric(dataline[3])-lim)
+                 & dataframe[,3]<=(as.numeric(dataline[3])+lim) , ]
+  new_var<-mean(subdata[,4],na.rm=TRUE)
+  return(new_var)
+}
+bal.blk@data$LifeExp14<-over(bal.blk,bal.nei)$LifeExp14
+data.blk<-data.frame(blk=bal.blk@data$BLK2010,long=coordinates(bal.blk)[,1],lat=coordinates(bal.blk)[,2],LifeExp14=bal.blk@data$LifeExp14)
+bal.blk@data$LifeExp14<-apply(data.blk,1,FUN=smooth_bal,dataframe=data.blk,lim=0.015)
+ 
+Map.nei<-BalHeatmap(bal.nei)+  
+   ggtitle("Fig2: Baltimore City Life Expectancy on Neighborhood Level")+
+   theme(text = element_text(size=12,face="bold"))
+ # LE4 on neighborhood level
 
-# Preparation
-## Dataset (potential predictors)
+Map.blk<-BalHeatmap(bal.blk)+  
+   ggtitle("Fig3: Baltimore City Life Expectancy on Block Level")+
+   theme(text = element_text(size=12,face="bold"))
+# plot LE4 after smoothing on block level
+```
+
+# 1.Introduction
+
+The inequality in Baltimore has been a big issue: "*Roland Park would be the 4th longest-living country in the world, while Seton Hill would be the 230th. Fourteen Baltimore neighborhoods have lower life expectancies than North Korea. Eight are doing worse than Syria.*" (Christopher Ingraham, The Washington Post, 2015). In this study, we focus on life expectancy on block level in Baltimore City. Our goal is to develop a model for predicting life expectancy in Baltimore down to single block resolution with estimates of uncertainty. 
+
+For geographic information about blocks in Baltimore, we use the Tiger shape files from [Census 2010](http://www.mdp.state.md.us/msdc/S5_Map_GIS.Shtml), from which we obtained block ID, coordinates and footprint for each block. There are 13488 blocks defined by Census 2010, and we use the polygon center of each block to calculate the map distance between two locations (use Google Maps API through R package "ggmap").
+
+```{r sample block, fig.height=6.5,fig.width=7, warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=1,results='markup'}
+#fellspoint<-bal.nei[bal.nei@data$CSA2010=="Fells Point",]
+fpblk<-bal.blk[bal.blk@data$BG2010%in%c(245100203001,245100203002,245100203003,245100202001,245100202002,245100201001,245100201002,245100105001,245100105002),]
+
+plot(fpblk,axes=TRUE,main="Fig1: Block Boundaries and centers of Fells Point Neighborhood")
+points(coordinates(fpblk),pch=1,cex=0.7)
+legend("bottomright",legend=c("Block center","block boundary"),cex=0.7,lwd=c(NA,1),pch=c(1,NA),text.font = 10)
+```
+
+## 1.1 Outcome Variable
+
+We could only obtain life expectancy data for Baltimore City on neighborhood level ([http://bniajfi.org/vital_signs/data_downloads/](http://bniajfi.org/vital_signs/data_downloads/)) through available resources. Therefore, we need to generate reliable outcome variable for 13488 blocks according to the life expectancy data for 55 neighborhoods in Baltimore City. We applied a 2 dimensional smoothing method to generate the outcome variable for Baltimore City's blocks.
+
+```{r heatmap, fig.height=8,fig.width=16, warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=200,cache=1}
+grid.arrange(Map.nei,Map.blk,nrow=1)
+```
+
+
+```{r test code, eval=FALSE,echo=FALSE}
+load("./data/bal_block.rda")
+load("./data/bal_neighbor.rda")
+plot(bal.blk,axes=TRUE)
+head(bal.blk@data)
+#dim(bal)
+#bal@polygons[[1]]
+
+# For example, block 245100401001005:
+#bal1000<-bal[bal@data$BLK2010==245100401001005,]
+#plot(bal1000,axes=TRUE)
+add1<-geocode("929 N WOLFE ST BALTIMORE, MD", output = "latlon" , source = "google")
+add2<-geocode("2095 ROCKROSE AVENUE BALTIMORE, MD", output = "latlon" , source = "google")
+dist<-mapdist(from=c(add1$lon,add1$lat),to=c(add2$lon,add2$lat),output="simple")
+dist$miles
+
+# sample areas
+bg1<-bal.blk[bal.blk@data$BG2010==245100104001,]
+blk1<-bal.blk[bal.blk@data$BLK2010==245100104001015,]
+canton<-bal.nei[bal.nei@data$CSA2010=="Canton",]
+fellspoint<-bal.nei[bal.nei@data$CSA2010=="Fells Point",]
+# creat coordinates for polygons
+plot(canton)
+plot(bg1,add=TRUE)
+points(coordinates(bg1),pch=1,cex=0.3)
+
+# imput neihgborhood LE14 to block level
+names(bal.blk@data)
+bal.blk@data$LifeExp14<-over(bal.blk,bal.nei)$LifeExp14
+# plot map on block level
+BalHeatmap(bal.blk)
+
+# creat data frame (tidy data)
+
+#dataline<-data.frame(blk=245100104001015,long=-76.57903,lat=39.28057,LifeExp14=78.39432)
+
+smooth_bal<-function(dataline,dataframe,lim){
+  subdata<-dataframe[ dataframe[,2]>=(as.numeric(dataline[2])-lim) &
+                       dataframe[,2]<=(as.numeric(dataline[2])+lim) &
+                 dataframe[,3]>=(as.numeric(dataline[3])-lim)
+                 & dataframe[,3]<=(as.numeric(dataline[3])+lim) , ]
+  new_var<-mean(subdata[,4],na.rm=TRUE)
+  return(new_var)
+}
+bal.blk@data$LifeExp14<-over(bal.blk,bal.nei)$LifeExp14
+data.blk<-data.frame(blk=bal.blk@data$BLK2010,long=coordinates(bal.blk)[,1],lat=coordinates(bal.blk)[,2],LifeExp14=bal.blk@data$LifeExp14)
+smooth.blk.le4<-apply(data.blk,1,FUN=smooth_bal,dataframe=data.blk,lim=0.015)
+bal.blk@data$LifeExp14<-smooth.blk.le4
+BalHeatmap(bal.blk)
+
+bg1<-bal.blk[bal.blk@data$BG2010==245100104001,]
+
+
+# useless: same as the above line
+shpdata<-bg1
+  shpdata@data$id = rownames(shpdata@data)
+  shpdata.points = fortify(shpdata, region="id")
+  shpdata.df = join(shpdata.points, shpdata@data, by="id")
+  ggplot(aes(long,lat,group=group,fill=LifeExp14),data=shpdata.df)+
+    geom_polygon(alpha=0.8,color="#999999",size=0.5)+
+    scale_fill_gradient(low = "#ffffcc", high = "#ff4444", space = "Lab", na.value = "grey50",guide = "colourbar")
+ 
+```
+
+## 1.2 Potential Predictors
+Since life expectancy is associated with many kinds of factors such as family disease history, individual body condition, environment and socioeconomic factors. We consider those following factors as the potential predictors for the predicting model of life expectancy:
+
 Demographics: Age, gender, race...
 
 Socioeconomic Characteristics: Income, Employment rate, poverty rate, percent of single-parent households...
@@ -48,32 +200,12 @@ Food Environment: Fast food density, carryout density, corner store density, sup
 
 Health Outcomes: Life expectancy and premature mortality, avertable deaths, top ten casuses of death...
 
-## Explore Data
 
+# 2.Method
 
+# 3.Result
 
-```{r input_block_shapefile, eval=FALSE}
-block_url<-"http://www.mdp.state.md.us/msdc/census/cen2010/maps/tiger10/blk2010.zip"
-download.file(block_url,destfile="./data/blk2010.zip")
-dir.create("./data/blk2010")
-unzip("./data/blk2010.zip",exdir="./data/blk2010")
-map <- readOGR("./data/blk2010", "blk2010")
-map_wgs84 <- spTransform(map, CRS("+proj=longlat +datum=WGS84"))
-bal<-map_wgs84[map_wgs84@data$CNTY2010==24510,]
-save(bal,file="bal_block.rda")
-```
+# 4.Discussion
 
-```{r block_data, fig.height=8,fig.width=8}
-load("./data/bal_block.rda")
-plot(bal,axes=TRUE)
-head(bal@data)
-#dim(bal)
-#bal@polygons[[1]]
-
-# For example, block 245100401001005:
-#bal1000<-bal[bal@data$BLK2010==245100401001005,]
-#plot(bal1000,axes=TRUE)
-
-
-```
+# 5.Reference
 
