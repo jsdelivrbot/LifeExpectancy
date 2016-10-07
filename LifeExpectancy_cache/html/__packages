@@ -9,3 +9,5 @@ gpclib
 rgdal
 rgeos
 gridExtra
+dplyr
+readxl

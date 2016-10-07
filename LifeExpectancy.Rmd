@@ -5,7 +5,7 @@ date: "September 15, 2016"
 output: html_document
 ---
   
-```{r load_package,warning=FALSE,message=FALSE,results='hide'}
+```{r load_package,warning=FALSE,message=FALSE,results='hide',echo=FALSE}
 #install.packages("maptools")
 #install.packages("maps")
 #install.packages("rgdal")
@@ -15,7 +15,10 @@ output: html_document
 #install.packages("plyr")
 #install.packages("grid")
 #install.packages("gridExtra")
-library(plyr)
+#install.packages("dplyr")
+#install.packages("readxl")
+library(dplyr)
+#library(plyr)
 library(ggplot2)
 library(ggmap)
 library(maps)
@@ -26,28 +29,10 @@ library(rgdal)
 library(rgeos)
 library(grid)
 library(gridExtra)
+library(readxl)
 ```
 
-```{r input shapefile, eval=FALSE}
-block_url<-"http://www.mdp.state.md.us/msdc/census/cen2010/maps/tiger10/blk2010.zip"
-download.file(block_url,destfile="./data/blk2010.zip")
-dir.create("./data/blk2010")
-unzip("./data/blk2010.zip",exdir="./data/blk2010")
-map <- readOGR("./data/blk2010", "blk2010")
-map_wgs84 <- spTransform(map, CRS("+proj=longlat +datum=WGS84"))
-bal.blk<-map_wgs84[map_wgs84@data$CNTY2010==24510,]
-save(bal.blk,file="./data/bal_block.rda")
-
-neighbor_url<-"http://bniajfi.org/wp-content/uploads/2016/04/VS-14-Health.zip"
-download.file(neighbor_url,destfile="./data/neighbor.zip")
-unzip("./data/neighbor.zip",exdir="./data/neighbor")
-map.neighbor<-readOGR("./data/neighbor/VS 14 Children & Family Health","VS14_Health")
-bal.nei <- spTransform(map.neighbor, CRS("+proj=longlat +datum=WGS84"))
-save(bal.nei,file="./data/bal_neighbor.rda")
-
-```
-
-```{r smooth LE4, fig.height=8,fig.width=8, warning=FALSE, message=FALSE, cache=TRUE}
+```{r smooth LE4, fig.height=8,fig.width=8, warning=FALSE, message=FALSE, cache=TRUE,echo=F}
 load("./data/bal_block.rda")
 load("./data/bal_neighbor.rda")
 
@@ -81,11 +66,13 @@ smooth_bal<-function(dataline,dataframe,lim){
   return(new_var)
 }
 bal.blk@data$LifeExp14<-over(bal.blk,bal.nei)$LifeExp14
+# add Neighborhood label to each block
+bal.blk@data$Neighborhood<-over(bal.blk,bal.nei)$CSA2010
 data.blk<-data.frame(blk=bal.blk@data$BLK2010,long=coordinates(bal.blk)[,1],lat=coordinates(bal.blk)[,2],LifeExp14=bal.blk@data$LifeExp14)
 bal.blk@data$LifeExp14<-apply(data.blk,1,FUN=smooth_bal,dataframe=data.blk,lim=0.015)
  
 Map.nei<-BalHeatmap(bal.nei)+  
-   ggtitle("Fig2: Baltimore City Life Expectancy on Neighborhood Level")+
+   ggtitle("Fig 2: Baltimore City Life Expectancy on Neighborhood Level")+
    theme(text = element_text(size=12,face="bold"))
  # LE4 on neighborhood level
 
@@ -93,29 +80,152 @@ Map.blk<-BalHeatmap(bal.blk)+
    ggtitle("Fig3: Baltimore City Life Expectancy on Block Level")+
    theme(text = element_text(size=12,face="bold"))
 # plot LE4 after smoothing on block level
+
 ```
 
-# 1.Introduction
+#  1.Introduction
 
-The inequality in Baltimore has been a big issue: "*Roland Park would be the 4th longest-living country in the world, while Seton Hill would be the 230th. Fourteen Baltimore neighborhoods have lower life expectancies than North Korea. Eight are doing worse than Syria.*" (Christopher Ingraham, The Washington Post, 2015). In this study, we focus on life expectancy on block level in Baltimore City. Our goal is to develop a model for predicting life expectancy in Baltimore down to single block resolution with estimates of uncertainty. 
+The inequality in Baltimore has been a big issue: 
 
-For geographic information about blocks in Baltimore, we use the Tiger shape files from [Census 2010](http://www.mdp.state.md.us/msdc/S5_Map_GIS.Shtml), from which we obtained block ID, coordinates and footprint for each block. There are 13488 blocks defined by Census 2010, and we use the polygon center of each block to calculate the map distance between two locations (use Google Maps API through R package "ggmap").
+<center> *"Roland Park would be the 4th longest-living country in the world, while Seton Hill would be the 230th. Fourteen Baltimore neighborhoods have lower life expectancies than North Korea. Eight are doing worse than Syria."* (Christopher Ingraham, The Washington Post, 2015)</center>
 
-```{r sample block, fig.height=6.5,fig.width=7, warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=TRUE,results='markup'}
-#fellspoint<-bal.nei[bal.nei@data$CSA2010=="Fells Point",]
-fpblk<-bal.blk[bal.blk@data$BG2010%in%c(245100203001,245100203002,245100203003,245100202001,245100202002,245100201001,245100201002,245100105001,245100105002),]
 
-plot(fpblk,axes=TRUE,main="Fig1: Block Boundaries and centers of Fells Point Neighborhood")
-points(coordinates(fpblk),pch=1,cex=0.7)
-legend("bottomright",legend=c("Block center","block boundary"),cex=0.7,lwd=c(NA,1),pch=c(1,NA),text.font = 10)
+In this study, we focus on life expectancy on block level in Baltimore City. Our goal is to develop a model for predicting life expectancy in Baltimore down to single block resolution with estimates of uncertainty. 
+
+#  2.Method
+##  2.1 Definition
+
+For geographic information about blocks in Baltimore, we use the Tiger shape files from [Census 2010](http://www.mdp.state.md.us/msdc/S5_Map_GIS.Shtml), from which we obtained block ID, coordinates and footprint for each block. There are 13488 blocks defined by Census 2010, and we use the polygon center of each block (black dots in Fig1) to calculate the map distance between two locations. For calculating distance, we use Google Maps API through R package "ggmap".
+
+
+```{r define block, fig.height=5,fig.width=6, fig.align='center', warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=TRUE,results='markup',echo=F}
+#fellspoint.nei<-bal.nei[bal.nei@data$CSA2010=="Fells Point",]
+fpblk<-bal.blk[bal.blk@data$Neighborhood%in%"Fells Point",]
+
+fpblk$LifeExp14<-over(fpblk,bal.nei)$LifeExp14
+fpblk$cor_long<-coordinates(fpblk)[,1]
+fpblk$cor_lat<-coordinates(fpblk)[,2]
+shpdata<-fpblk
+shpdata@data$id = rownames(shpdata@data)
+shpdata.points = fortify(shpdata, region="id")
+shpdata.df = join(shpdata.points, shpdata@data, by="id")
+plot.fp<-ggplot(aes(long,lat,group=group,fill=LifeExp14),data=shpdata.df)+
+    geom_polygon(alpha=0.8,color="#999999",size=0.5)+
+    geom_point(aes(x=cor_long,y=cor_lat),size=0.6)+
+    scale_fill_gradient(low = "#ffffcc", high = "#ff4444", space = "Lab", na.value = "grey50",guide = "colourbar") +
+    ggtitle("Fig 1: Blocks in Fells Point")+
+    theme(text = element_text(size=12,face="bold"))
+plot.fp
 ```
 
-## 1.1 Outcome Variable
+##  2.2 Data
 
-We could only obtain life expectancy data for Baltimore City on neighborhood level ([http://bniajfi.org/vital_signs/data_downloads/](http://bniajfi.org/vital_signs/data_downloads/)) through available resources. Therefore, we need to generate reliable outcome variable for 13488 blocks according to the life expectancy data for 55 neighborhoods in Baltimore City. We applied a 2 dimensional smoothing method to generate the outcome variable for Baltimore City's blocks.
+>  Outcome variable: 
 
-```{r heatmap, fig.height=8,fig.width=16, warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=200,cache=1}
-grid.arrange(Map.nei,Map.blk,nrow=1)
+   We could obtain the life expectancy data in 2014 for Baltimore City on neighborhood level as the outcome variable ([http://bniajfi.org/vital_signs/data_downloads/](http://bniajfi.org/vital_signs/data_downloads/)). There are 55 neighborhoods in Baltimore City, we use the definition of "CSA2010" in Census 2010 shape files to get the geographic information of thoses neighborhoods. 
+
+```{r heatmap, fig.height=6,fig.width=8, fig.align='center', warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=TRUE,echo=F}
+Map.nei
+```
+
+>  independent variable: 
+
+   Since life expectancy is associated with many kinds of factors such as family disease history, individual body condition, environment and socioeconomic factors. We consider those following factors as the potential predictors for the predicting model of life expectancy:
+
+ + Demographics: Age, gender, race...
+
+ + Socioeconomic Characteristics: Income, Employment rate, poverty rate, percent of single-parent households...
+
+ + Education: Reading proficiency, School absenteeism, adult education attainment... 
+
+ + Community Built and Social Environment: Alcohol/tobacco store density, juvenile arrest rate, domestic violence rate...
+
+ + Housing: Lead paint violation rate, energy cut-off rate...
+
+ + Food Environment: Fast food density, carryout density, corner store density, supermarket proximity...
+
+ + Health Outcomes: premature mortality, avertable deaths, top ten casuses of death...
+
+Most of the neighborhood data are Census data downloaded from [BNIA](http://bniajfi.org/vital_signs/data_downloads/). And most of the lock level data are from datasets containing location information such as address and coordinates downloaded from [Open Baltimore](https://data.baltimorecity.gov/)
+
+From the previous section, we could see there are plenty of data resources on neighborhood level from many aspects like health, socioeconomic, public safety, and housing. However, we need to narrow down the range of potential predictors since lots of them are highly correlated such as crime rate and violent crime rate, number of demolition permits and vacant building. After several steps of selection, I choose 22 variables as the potential predictors which are shown as below:
+   
+```{r process neighborhood level data, echo=F,eval=F}
+# import raw data of census 2010-2014
+census_nei_files<-list.files("../project_data_reference/project1_data/census 2010-2014 _xlsx/")
+census_nei_names<-gsub("(VS-14-)|(VS14-)|(-201[0-1]-2014.xlsx)","",census_nei_files)
+for(i in 1:length(census_nei_files)){
+  assign(paste0("rawdata_nei_",census_nei_names[i]),read_excel(paste0("../project_data_reference/project1_data/census 2010-2014 _xlsx/",census_nei_files[i]),skip=1)[1:56,])
+}
+
+# for repeated variables, choose newest one (year 2014)
+rawdata_nei_Arts14<-rawdata_nei_Arts[,c(1,5,9,13,14,15,16,17,18)]
+rawdata_nei_Crime14<-rawdata_nei_Crime[,c(1,6,11,15,16,17,18,21,23,25,27,29,33,34)] 
+rawdata_nei_Housing14<-rawdata_nei_Housing[,c(1,6,11,16,20,24,29,34,39,44,45,46,50,54,59,63,68,71,75,79,80)]
+rawdata_nei_Education14<-rawdata_nei_Education[,c(1,6,11,16,24,28,33,38,43,48,53,58,62,66,70,73,78,83,88,93,98,103,108,113,117,122,127,132,136,137)]
+rawdata_nei_Workforce14<-rawdata_nei_Workforce[,c(1:8,12,17,22,26,31,36,41,46,51,56,61,66,71,72,77)]
+rawdata_nei_Sustainability14<-rawdata_nei_Sustainability[,c(1,6,11,12:22,26:28,33,36,39)]
+rawdata_nei_Health14<-`rawdata_nei_Children-and-Family-Health`[,c(1,6,11,16,21,26,31,35,39,43,47,51,55,59,63,67,69,73)]
+rawdata_nei_Census14<-rawdata_nei_Census
+
+# select variables used in modeling
+rawdata_nei<-rawdata_nei_Health14[,c(1,8)]
+rawdata_nei<-full_join(rawdata_nei,rawdata_nei_Arts14[,c(1,2,4,7,8,9)])
+rawdata_nei<-full_join(rawdata_nei,rawdata_nei_Crime14[,c(1,2,3,4,5,14,8,9,10,11,12)])
+rawdata_nei<-full_join(rawdata_nei,rawdata_nei_Housing14[,c(1,2,3,4,10,14,16,17,20)])
+rawdata_nei<-full_join(rawdata_nei,rawdata_nei_Workforce14[,c(1,5,7,12,22)])
+rawdata_nei<-full_join(rawdata_nei,rawdata_nei_Sustainability14[,c(1,12)])
+rawdata_nei<-full_join(rawdata_nei,rawdata_nei_Health14[,c(1,16,17)])
+rawdata_nei<-full_join(rawdata_nei,rawdata_nei_Census14[,c(1,17,20,21)])
+save(rawdata_nei,file="./data/rawdata_nei.rda")
+```
+
+```{r variable select,fig.height=10,fig.width=10, fig.align='center', warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=TRUE,echo=F}
+load("./data/rawdata_nei.rda")
+#head(rawdata_nei)
+label<-data.frame(num=c("CSA","y",paste0("x",seq(1:33))),"name"=names(rawdata_nei))
+names(rawdata_nei)<-c("CSA","y",paste0("x",seq(1:33)))
+data1<-data.frame(rawdata_nei[1:55,])
+
+#x1<-data1[,3:ncol(data1)]
+#pairs(x1,cex=0.5,pch=16)
+data2<-data1[,-which(names(data1)=="x7"|names(data1)=="x8"|names(data1)=="x10"|names(data1)=="x11"|names(data1)=="x14"|names(data1)=="x25"|names(data1)=="x27"|names(data1)=="x30"|names(data1)=="x21"|names(data1)=="x26"|names(data1)=="x23")]
+x2<-data2[,2:ncol(data2)]
+
+raw_x<-label[label$num%in%colnames(x2),]
+rownames(raw_x)<-seq(1:nrow(raw_x))
+as.vector(raw_x[2:nrow(raw_x),2])
+
+pairs(x2,cex=0.5,pch=16,main="Fig 3: Scatter plot matrix")
+```
+
+#  3 Statistical Method
+
+We want to predict life expectancy for the 13488 blocks in Baltimore City. However, we could only obtain life expectancy data as the outcome variable on neighborhood level. Therefore, we couldn't build up the prediction model directly on block level. In this study, we decide to use a glm method to train a prediction model by using neighborhood data, then plug in the block level predictors into this model and obtain the prediction values for each block. Since it's impossible to obtain the predictors for neighborhood level and block level on the same scale (for example, we couldn't get the median home income for each block), we need to estimate several predictors for blocks so that we can plug in them into the prediction model built on neighborhood data.
+
+## 3.1  Model
+
+Since the outcome variable is continuous and the number of observations are not very large (we have 55 neighbor), we could use generalized linear model. (need to decide "family")
+
+##  3.2 Data Transform
+
+Such as normalization, log tranform, spline...
+
+
+##  3.3 Variable Selection
+
+Use likelihood ratio test to select suitable independent variables.
+
+
+## 3.4 Train Model
+
+## 3.5 Apply model on block level data
+
+
+```{r data,eval=F,echo=F}
+blkdata<-bal.blk@data
+n_blk<-blkdata%>%group_by(Neighborhood)%>%summarise(number=n())
+n_blk
 ```
 
 
@@ -130,6 +240,8 @@ head(bal.blk@data)
 # For example, block 245100401001005:
 #bal1000<-bal[bal@data$BLK2010==245100401001005,]
 #plot(bal1000,axes=TRUE)
+
+geocodeQueryCheck(userType = "free") #check for remaining query time
 add1<-geocode("929 N WOLFE ST BALTIMORE, MD", output = "latlon" , source = "google")
 add2<-geocode("2095 ROCKROSE AVENUE BALTIMORE, MD", output = "latlon" , source = "google")
 dist<-mapdist(from=c(add1$lon,add1$lat),to=c(add2$lon,add2$lat),output="simple")
@@ -181,42 +293,32 @@ shpdata<-bg1
     geom_polygon(alpha=0.8,color="#999999",size=0.5)+
     scale_fill_gradient(low = "#ffffcc", high = "#ff4444", space = "Lab", na.value = "grey50",guide = "colourbar")
  
+  
+# Sep 26
+url<-"http://bniajfi.org/wp-content/uploads/2016/04/VS-14-Census.zip"
+download.file(url,destfile = "../project_data_reference/census.zip")
+unzip("../project_data_reference/census.zip",exdir="../project_data_reference/")
+list.files()
+map <- readOGR("../project_data_reference/VS 14 Census Demographics/","VS14_Census")
+map_wgs84 <- spTransform(map, CRS("+proj=longlat +datum=WGS84"))
+head(map_wgs84)@data
+
+blkdata<-bal.blk@data
+n_blk<-blkdata%>%group_by(Neighborhood)%>%summarize(n=n())
 ```
 
-## 1.2 Potential Predictors
-Since life expectancy is associated with many kinds of factors such as family disease history, individual body condition, environment and socioeconomic factors. We consider those following factors as the potential predictors for the predicting model of life expectancy:
 
-Neighborhood level:
+# Question
 
-Demographics: Age, gender, race...
+* It's difficult to find block level education & health data and numbers of residents in each block. Can I use the estimated values as the predictors then plug them into the exist model?
+* Could I use the data from other city such Chicago, New York and LA to train the prediction model?
 
-Socioeconomic Characteristics: Income, Employment rate, poverty rate, percent of single-parent households...
+# 4.Result
 
-Education: Reading proficiency, School absenteeism, adult education attainment... 
+# 5.Discussion
 
-Community Built and Social Environment: Alcohol/tobacco store density, juvenile arrest rate, domestic violence rate...
-
-Housing: Lead paint violation rate, energy cut-off rate...
-
-Food Environment: Fast food density, carryout density, corner store density, supermarket proximity...
-
-Health Outcomes:premature mortality, avertable deaths, top ten casuses of death...
-
-Block level:
-
-Housing: House density, vacant building density
-
-Food Environment: Nearest distance to food store/supermarket/grocery
-
-Health and Well-Being: Nearest distance to nursing home/shelter
+# 6.Reference
 
 
 
-# 2.Method
-
-# 3.Result
-
-# 4.Discussion
-
-# 5.Reference
 
