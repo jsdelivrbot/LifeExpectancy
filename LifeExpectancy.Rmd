@@ -181,6 +181,7 @@ save(rawdata_nei,file="./data/rawdata_nei.rda")
 ```
 
 ```{r variable select,fig.height=10,fig.width=10, fig.align='center', warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=TRUE,echo=F}
+
 load("./data/rawdata_nei.rda")
 #head(rawdata_nei)
 label<-data.frame(num=c("CSA","y",paste0("x",seq(1:33))),"name"=names(rawdata_nei))
@@ -196,8 +197,38 @@ raw_x<-label[label$num%in%colnames(x2),]
 rownames(raw_x)<-seq(1:nrow(raw_x))
 as.vector(raw_x[2:nrow(raw_x),2])
 
-pairs(x2,cex=0.5,pch=16,main="Fig 3: Scatter plot matrix")
+pairs(x2,cex=0.3,pch=16,main="Fig 3: Scatter plot matrix")
+
 ```
+
+
+Since health environment is highly correlated with life expectancy, I also add several variables which are representative of health enviroment: Lead Paint Violations, density of hospitals/nursing homes/shelters. 
+
+Number| Neighborhood level variables | Block level variables
+-------|------------------|---------------
+1| Number of Arts-Related Businesses | Baltimore Arts Organizations
+2| Number of Persons with Library Cards| Libraries Location
+3| Public Art | Public Art Inventory
+4| Number of Public Murals| Monuments, Museums, Designated Landmarks
+5| Number of Event Permits Requested | Special event permits
+6| Part 1 Crime Rate | BPD Part 1 Victim Based Crime Data
+7| Juvenile Arrest Rate |BPD Arrests Data
+8| Number of Shootings | BPD Part 1 Victim Based Crime Data
+9| Number of Common Assault Calls for Service | Calls for Service
+10| Number of Automobile Accident Calls for Service | Calls for Service
+11| Number of Homes Sold | ...
+12| Median Price of Homes Sold | ...
+13| Median Number of Days on the Market | Zillow API Data
+14| Total Number of Residential Properties | Real Estate Value
+15| Number of Homeowner's Tax Credits | Real Property Taxes
+16| Percentage of Residential Properties that are Vacant and Abandoned | Vacant Building, Vacant Houses
+17| Unemployment Rate| ...
+18| Walk Score | Walk Score API
+19| Liquor Outlet density | Liquor Stores Locations
+20| Total Number of Households | Real Property Taxes, Area of each block
+21| Average Household Size | Real Property Taxes, Area of each block
+22| Median Household Income | Real Estate Value, Real Property Taxes
+
 
 #  3 Statistical Method
 
@@ -205,7 +236,19 @@ We want to predict life expectancy for the 13488 blocks in Baltimore City. Howev
 
 ## 3.1  Model
 
-Since the outcome variable is continuous and the number of observations are not very large (we have 55 neighbor), we could use generalized linear model. (need to decide "family")
+Since the outcome variable is continuous and the number of observations are not very large (we have 55 neighbor), we could use generalized linear model. According to the simple glm regression result (comparing the AIC) and the distribution of the outcome variable in the plots above, I decide the use the "Gamma" family on glm.
+
+Use cross validation to evaluate different models then choose one with the best performance.
+
+```{r glm,fig.height=10,fig.width=10, fig.align='center', warning=FALSE, message=FALSE, cache=TRUE,dev="png", dpi=100,cache=TRUE,echo=F}
+fit.gau<-glm(y~x1+x2+x3+x4+x5+x6+x9+x12+x13+x15+x16+x17+x18+x19+x20+x22+x24+x28+x29+x31+x32+x33,family = "gaussian",data=data2)
+fit.gau
+fit.gam1<-glm(y~x1+x2+x3+x4+x5+x6+x9+x12+x13+x15+x16+x17+x18+x19+x20+x22+x24+x28+x29+x31+x32+x33,family = Gamma (link="inverse"),data=data2)
+fit.gam1
+fit.gam2<-glm(y~x1+x2+x3+x4+x5+x6+x9+x12+x13+x15+x16+x17+x18+x19+x20+x22+x24+x28+x29+x31+x32+x33,family = Gamma (link="log"),,data=data2)
+fit.gam2
+
+```
 
 ##  3.2 Data Transform
 
@@ -310,7 +353,9 @@ n_blk<-blkdata%>%group_by(Neighborhood)%>%summarize(n=n())
 
 # Question
 
-* It's difficult to find block level education & health data and numbers of residents in each block. Can I use the estimated values as the predictors then plug them into the exist model?
+* It's difficult to find block level education & health data and numbers of residents in each block. Can I use the estimated values as the predictors then plug them into the exist model? Or use the proportion of area for each block to estimate numbers of residents.
+
+
 * Could I use the data from other city such Chicago, New York and LA to train the prediction model?
 
 # 4.Result
