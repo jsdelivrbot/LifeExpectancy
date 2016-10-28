@@ -1,5 +1,4 @@
-# LifeExpectancy
-Advanced Data Science - Project 1
+# Advanced Data Science Project: Downsample Life Expectancy
 
 Writeup: Downsample Life Expectancy.pdf
 
