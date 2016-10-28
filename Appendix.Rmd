@@ -1,0 +1,150 @@
+---
+title: "Appendix"
+author: "Yifan Zhou"
+output: pdf_document
+---
+## Assumptions Checking
+
+```{r assumptions checking, out.height='300px', fig.align='center', warning=FALSE, message=FALSE, dev="png", dpi=200, echo=F, results="markup"}
+library(splines)
+library(dplyr)
+options(digits = 7)
+load("blkdata_1.rda")
+load("neidata_1.rda")
+dd.nei<-data.nei%>% select(CSA2010,nei_id,LifeExp,artorg:hnuit,class,protax,library=lib)
+dd.nei<-dd.nei %>% select(-logprotax,-splevent,-comassault,-autoacci,-grocery,-vacparcel,-vaclot,-homesales, -hnuit, -artorg, -nursing)
+# log transform
+dd.nei<- dd.nei%>% mutate(logprotax=log(protax+1),logarrest=log(arrest+1),logmsp=log(msp+1),logvacbuid=log(numb_vacbuild+1))
+dd.nei<-dd.nei %>% select(-arrest,-msp,-numb_vacbuild)
+dd.nei$class<-as.numeric(dd.nei$class)
+class45<-ifelse((dd.nei$class>=4 & dd.nei$class<=5),1,0)
+dd.nei$stress<-class45
+#pairs(dd.nei[,3:ncol(dd.nei)],cex=0.3,pch=16,main="Fig 3: Paris plot for all variables and outcome")
+#dd.nei<- dd.nei %>% mutate(logprotax_sp1=ifelse(logprotax>=8.8,logprotax-8.8,0))
+#dd.nei<- dd.nei%>% mutate(lpt2=logprotax^2,lptsp2=logprotax_sp1^2)
+
+dd.blk<-data.blk %>% 
+  select(blk,CSA2010, nei_id, artorg, numb_crime, logprotax, numb_vacbuild, lib, pubart, splevent, arrest, arrest_juv, shoot, comassault, autoacci, liquor, grocery, hospital, nursing, msp, homesales, vacparcel, vaclot, hnuit, class, protax,library=lib) %>%
+  select(-logprotax,-splevent,-comassault,-autoacci,-grocery,-vacparcel,-vaclot,-homesales, -hnuit, -artorg, -nursing) %>%
+  mutate(logprotax=log(protax+1), logarrest=log(arrest+1),logmsp=log(msp+1),logvacbuid=log(numb_vacbuild+1)) %>%
+  select(-arrest,-msp,-numb_vacbuild)
+dd.blk$class<-as.numeric(dd.blk$class)
+class45<-ifelse((dd.blk$class>=4 & dd.blk$class<=5),1,0)
+dd.blk$stress<-class45
+fit8<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ ns(numb_crime,2) + ns(library,2)*stress + liquor + ns(hospital,3)*stress + pubart)
+
+# final model:
+fit<-fit8
+# Independence
+par(mar=c(2.2,2.2,1,0),mgp=c(0.8,0.05,0),fin=c(1,1.5))
+layout(matrix(c(1:9),nrow=3,ncol=3,byrow=T))
+resi<-residuals.lm(fit)
+plot(dd.nei$logprotax,resi,main="(a)",xlab="log of property tax",ylab="residuals")
+lines(ksmooth(dd.nei$logprotax,resi,"normal", bandwidth =1), col = 3,lwd=2)
+abline(h=0,col=2)
+plot(dd.nei$numb_crime,resi,main="(b)",xlab="crime rate",ylab="residuals")
+lines(ksmooth(dd.nei$numb_crime,resi,"normal", bandwidth =1000), col = 3,lwd=2)
+abline(h=0,col=2)
+plot(dd.nei$shoot,resi,main="(c)",xlab="shooting rate",ylab="residuals")
+lines(ksmooth(dd.nei$shoot,resi,"normal", bandwidth =1), col = 3,lwd=2)
+abline(h=0,col=2)
+plot(dd.nei$hospital,resi,main="(d)",xlab="distance to hospital",ylab="residuals")
+lines(ksmooth(dd.nei$hospital,resi,"normal", bandwidth =1), col = 3,lwd=2)
+abline(h=0,col=2)
+plot(dd.nei$library,resi,main="(e)",xlab="distance to library",ylab="residuals")
+lines(ksmooth(dd.nei$library,resi,"normal", bandwidth =1), col = 3,lwd=2)
+abline(h=0,col=2)
+plot(dd.nei$logvacbuid,resi,main="(f)",xlab="log of vacant building density",ylab="residuals")
+lines(ksmooth(dd.nei$logvacbuid,resi,"normal", bandwidth =1), col = 3,lwd=2)
+abline(h=0,col=2)
+plot(dd.nei$logarrest,resi,main="(g)",xlab="log of arrest rate",ylab="residuals")
+lines(ksmooth(dd.nei$logarrest,resi,"normal", bandwidth =1), col = 3,lwd=2)
+abline(h=0,col=2)
+plot(dd.nei$liquor,resi,main="(h)",xlab="distance to liquor",ylab="residuals")
+lines(ksmooth(dd.nei$liquor,resi,"normal", bandwidth =1), col = 3,lwd=2)
+abline(h=0,col=2)
+plot(dd.nei$pubart,resi,main="(i)",xlab="public art density",ylab="residuals")
+lines(ksmooth(dd.nei$pubart,resi,"normal", bandwidth =1), col = 3,lwd=2)
+abline(h=0,col=2)
+
+par(mar=c(2.2,2.2,1,0),mgp=c(0.8,0.05,0),fin=c(1,1.5))
+layout(matrix(c(1,2,3,0),nrow=2,ncol=2,byrow=T))
+# Equal variance
+plot(fitted.values(fit),residuals.lm(fit),main="(j)",xlab="fitted values",ylab="residuals")
+abline(h=0,col=2)
+plot(fitted.values(fit),residuals.lm(fit)^2,main="(k)",xlab="fitted values",ylab="square of residuals")
+abline(h=0,col=2)
+# Normality
+qqnorm(residuals(fit), pch = 16,main="(l)Q-Q plot")
+```
+\begin{center}
+{\textbf{Fig 3: Assumptions Checking}}
+\end{center}
+
+\begin{table}[ht]
+\scriptsize
+\centering
+\textbf{\caption{Results integrated on neighborhood level}}
+\begin{tabular}{rlrrr}
+  \hline
+ & Neighborhood & Life Expectancy & Weighted Average of Life Expectancy &Weighted Average of SE \\ 
+  \hline
+1 & Downtown/Seton Hill & 67.48 & 68.90 & 2.44 \\ 
+  2 & Dorchester/Ashburton & 73.90 & 69.08 & 2.00 \\ 
+  3 & Brooklyn/Curtis Bay/Hawkins Point & 69.29 & 69.78 & 2.05 \\ 
+  4 & Southeastern & 73.81 & 69.79 & 2.38 \\ 
+  5 & Upton/Druid Heights & 68.82 & 70.50 & 2.32 \\ 
+  6 & Greenmount East & 67.78 & 70.57 & 2.96 \\ 
+  7 & Clifton-Berea & 67.16 & 70.63 & 2.70 \\ 
+  8 & Southwest Baltimore & 68.26 & 70.82 & 2.72 \\ 
+  9 & Sandtown-Winchester/Harlem Park & 70.02 & 70.83 & 2.84 \\ 
+  10 & Cherry Hill & 69.84 & 70.88 & 1.84 \\ 
+  11 & Poppleton/The Terraces/Hollins Market & 68.76 & 71.28 & 2.28 \\ 
+  12 & Madison/East End & 68.75 & 71.50 & 2.69 \\ 
+  13 & Greater Rosemont & 70.21 & 71.75 & 2.27 \\ 
+  14 & Oldtown/Middle East & 72.03 & 71.80 & 2.58 \\ 
+  15 & Harbor East/Little Italy & 72.32 & 72.60 & 1.87 \\ 
+  16 & Patterson Park North \& East & 72.57 & 72.69 & 1.68 \\ 
+  17 & Greater Mondawmin & 71.73 & 72.72 & 2.15 \\ 
+  18 & Dickeyville/Franklintown & 73.30 & 72.75 & 2.26 \\ 
+  19 & Southern Park Heights & 69.56 & 72.93 & 2.31 \\ 
+  20 & Orangeville/East Highlandtown & 72.34 & 73.19 & 2.24 \\ 
+  21 & Cedonia/Frankford & 72.69 & 73.28 & 1.77 \\ 
+  22 & Forest Park/Walbrook & 74.68 & 73.40 & 1.82 \\ 
+  23 & Pimlico/Arlington/Hilltop & 68.17 & 73.42 & 2.32 \\ 
+  24 & Midway/Coldstream & 69.44 & 73.49 & 2.52 \\ 
+  25 & Loch Raven & 76.64 & 73.89 & 1.85 \\ 
+  26 & Claremont/Armistead & 72.20 & 73.98 & 2.01 \\ 
+  27 & Midtown & 75.70 & 74.03 & 1.95 \\ 
+  28 & Howard Park/West Arlington & 76.03 & 74.15 & 1.67 \\ 
+  29 & Highlandtown & 74.04 & 74.15 & 1.79 \\ 
+  30 & Westport/Mount Winans/Lakeland & 73.81 & 74.29 & 1.93 \\ 
+  31 & Edmondson Village & 72.36 & 74.41 & 1.85 \\ 
+  32 & Greater Charles Village/Barclay & 74.68 & 74.43 & 2.04 \\ 
+  33 & Fells Point & 78.23 & 75.08 & 1.63 \\ 
+  34 & Chinquapin Park/Belvedere & 75.22 & 75.13 & 1.80 \\ 
+  35 & Allendale/Irvington/S. Hilton & 71.30 & 75.34 & 2.03 \\ 
+  36 & Beechfield/Ten Hills/West Hills & 75.36 & 75.72 & 1.61 \\ 
+  37 & Greater Govans & 73.29 & 75.80 & 1.73 \\ 
+  38 & Penn North/Reservoir Hill & 71.34 & 76.62 & 2.00 \\ 
+  39 & Inner Harbor/Federal Hill & 78.85 & 76.70 & 1.91 \\ 
+  40 & Belair-Edison & 72.93 & 76.75 & 2.07 \\ 
+  41 & Morrell Park/Violetville & 72.98 & 76.77 & 2.18 \\ 
+  42 & Glen-Fallstaff & 82.51 & 76.83 & 2.16 \\ 
+  43 & Washington Village/Pigtown & 70.23 & 77.19 & 2.06 \\ 
+  44 & South Baltimore & 77.13 & 77.27 & 1.97 \\ 
+  45 & Canton & 78.39 & 77.32 & 1.61 \\ 
+  46 & Lauraville & 76.15 & 77.53 & 1.53 \\ 
+  47 & The Waverlies & 73.00 & 77.61 & 1.62 \\ 
+  48 & Harford/Echodale & 75.77 & 77.64 & 1.55 \\ 
+  49 & Northwood & 76.17 & 77.68 & 1.63 \\ 
+  50 & Hamilton & 74.87 & 77.93 & 1.48 \\ 
+  51 & North Baltimore/Guilford/Homeland & 83.90 & 80.61 & 1.79 \\ 
+  52 & Medfield/Hampden/Woodberry/Remington & 76.21 & 85.08 & 2.16 \\ 
+  53 & Greater Roland Park/Poplar Hill & 83.84 & 86.24 & 1.90 \\ 
+  54 & Cross-Country/Cheswolde & 89.62 & 86.31 & 2.06 \\ 
+  55 & Mount Washington/Coldspring & 81.26 & 93.90 & 4.07 \\ 
+   \hline
+\end{tabular}
+\end{table}
+

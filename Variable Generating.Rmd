@@ -1,0 +1,332 @@
+---
+title: "Variable Generating"
+author: "Yifan Zhou"
+output: html_document
+---
+
+```{r generate variable, eval=F,echo=F}
+load("./data/data_blk.rda")
+
+id.nei<-data.frame(id=seq(1:55),name=levels(data.blk$neighborhood))
+data.blk$nei_id<-as.numeric(factor(data.blk$neighborhood))
+data.blk<-data.blk[complete.cases(data.blk),]
+# coordinate matrix for blocks
+dataf.block<-data.frame(long=data.blk$long,lat=data.blk$lat)
+m.block<-as.matrix(dataf.block)
+# calculate distance function
+fundist<-function(data){
+  km <- spDistsN1(m.block, data, longlat=T)
+  return(km)
+}
+num_var<-function(dataline,variable,lim){
+  find_surround<-function(data){
+    return((data[1]>=(dataline[1]-lim) && data[1]<=(dataline[1]+lim) && 
+              data[2]>=(dataline[2]-lim) && data[2]<=(dataline[2]+lim)))
+  }
+  return(sum(apply(variable, 1, find_surround)))
+}
+# Generate covariates on block level
+#1. Art organization
+art.files<-list.files("../project_data_reference/project1_data/culture&art_csv/", full.names = T)
+raw.artorg<-read.csv(art.files[1])
+x.lat<-str_extract(raw.artorg$Location.1,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw.artorg$Location.1,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+m.artorg<-as.matrix(data.frame(long=x.long,lat=x.lat))
+
+for(i in 1:nrow(m.artorg)){
+  km <- spDistsN1(m.block, m.artorg[i,], longlat=T)
+  if(i==1){
+    km.artorg<-data.frame(km)
+    names(km.artorg)[i]<-paste0("artorg",i)
+  }
+  if(i!=1){
+    km.artorg<-cbind(km.artorg,km)
+    names(km.artorg)[i]<-paste0("artorg",i)  
+  }
+}
+
+# maximum distance to artorg
+maxdist<-max(apply(km.artorg,1,max))
+
+# calculate distance index for artorg
+sortn<-function(dataline,n){
+  sortdata<-sort(dataline)
+  wei<-seq(1:n)
+  indexn<-sum((maxdist-sortdata[1:n])*(1/wei))
+  return(indexn)
+}
+index.artorg<-apply(km.artorg,1,FUN = sortn,n=10)
+data.blk$artorg<-index.artorg
+
+# 2. Crime: number of crimes surronded by 2km (long )
+crime.files<-list.files("../project_data_reference/project1_data/public safety_csv/", full.names = T)
+raw.crime1<-read.csv(crime.files[2])
+raw.crime1<-raw.crime1[grep("2015",raw.crime1$CrimeDate),]
+x.lat<-str_extract(raw.crime1$Location.1,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw.crime1$Location.1,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+cordata<-data.frame(long=x.long,lat=x.lat)
+cordata<-cordata[complete.cases(cordata),]
+numb.crime1<-apply(dataf.block,1,num_var,lim=0.02,variable=cordata)
+save(numb.crime1,file="numb_crime.rda")
+data.blk$numb_crime<-numb.crime1
+
+# 3. Vacant building
+files<-list.files("../project_data_reference/project1_data/housing&development_csv/", full.names = T)
+raw<-fread(files[4])
+x.lat<-str_extract(raw$Location,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw$Location,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+cordata<-data.frame(long=x.long,lat=x.lat)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata,dataf.block,k=nrow(cordata))
+fun1<-function(x){
+  return(sum(x<=0.003))
+}
+a<-apply(dist$nn.dists,1,FUN=fun1)
+data.blk$numb_vacbuild<-a
+
+# 4. real property tax
+files<-list.files("../project_data_reference/project1_data/financial_csv/", full.names = T)
+raw<-fread(files[1])
+x.lat<-str_extract(raw$Location,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw$Location,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+cordata<-data.frame(long=x.long,lat=x.lat,tax=as.numeric(gsub("\\$","",raw$StateTax)))
+cordata<-cordata[complete.cases(cordata),]
+
+# find nearest 3 property tax for each block
+dist<-nn2(cordata[,1:2],dataf.block,k=3)
+fun2<-function(data){
+  mean(cordata[data,]$tax)
+}
+protax<-apply(dist$nn.idx,1,fun2)
+summary(protax)
+summary(log(protax+1))
+data.blk$protax<-protax
+data$logprotax<-log(protax+1)
+
+# 5. Library (distance to the nearest library)
+art.files<-list.files("../project_data_reference/project1_data/culture&art_csv/", full.names = T)
+raw<-read.csv(art.files[3])
+loc<-raw$Location.1
+loc<-gsub("\nBaltimore, MD\n","",loc)
+cordata<-geocode(loc)
+dist<-nn2(cordata,dataf.block,k=1)
+data.blk$lib<-dist$nn.dists*111
+
+# 6. Public art: Monument, Museums, landmarks (numer of public arts <= cor distance 0.02)
+art.files<-list.files("../project_data_reference/project1_data/culture&art_csv/", full.names = T)
+raw1<-read.csv(art.files[2])
+raw2<-read.csv(art.files[4])
+raw3<-read.csv(art.files[5])
+loc<-c(as.character(raw1$Location.1),as.character(raw2$Location.1),as.character(raw3$Location.1))
+loc<-gsub("\nBaltimore, MD\n","",loc,ignore.case = T)
+loc<-loc[nchar(loc)>0]
+cordata<-geocode(loc)
+dist<-nn2(cordata,dataf.block,k=nrow(cordata))
+fun1<-function(x){
+  return(sum(x<=0.02))
+}
+a<-apply(dist$nn.dists,1,FUN=fun1)
+data.blk$pubart<-a
+
+# 7. Special event permits (number of special event permit <= cor dist 0.02)
+art.files<-list.files("../project_data_reference/project1_data/culture&art_csv/", full.names = T)
+raw<-read.csv(art.files[10])
+loc<-str_extract(raw$intermediate_location_text,regex("([0-9]*.[0-9]*, -[0-9]*.[0-9]*)|((.*?) [a-z]*,)",ignore_case=T))
+loc<-loc[complete.cases(loc)]
+cordata<-geocode(loc)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata,dataf.block,k=nrow(cordata))
+fun1<-function(x){
+  return(sum(x<=0.02))
+}
+a<-apply(dist$nn.dists,1,FUN=fun1)
+data.blk$splevent<-a
+
+# 8.Arrest data (number of people arrest <= cor dist 0.002)
+crime.files<-list.files("../project_data_reference/project1_data/public safety_csv/", full.names = T)
+raw<-fread(crime.files[1])
+head(raw)
+x.lat<-str_extract(raw$`Location 1`,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw$`Location 1`,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+cordata<-data.frame(long=x.long,lat=x.lat,age=as.numeric(gsub("\\$","",raw$Age)))
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata[,1:2],dataf.block,k=10000)
+fun1<-function(x){
+  return(sum(x<=0.002))
+}
+a<-apply(dist$nn.dists,1,FUN=fun1)
+data.blk$arrest<-a
+# 9. Arrest Juvenile 
+cordata<-cordata[cordata[,3]<=18,]
+dist<-nn2(cordata[,1:2],dataf.block,k=nrow(cordata))
+a<-apply(dist$nn.dists,1,FUN=fun1)
+summary(a)
+plot(a)
+data.blk$arrest_juv<-a
+
+#9. Shootings (num of shootings 0.002)
+raw<-fread(crime.files[2])
+raw<-raw[raw$Description=="SHOOTING",]
+x.lat<-str_extract(raw$`Location 1`,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw$`Location 1`,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+cordata<-data.frame(long=x.long,lat=x.lat)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata[,1:2],dataf.block,k=nrow(cordata))
+a<-apply(dist$nn.dists,1,FUN=fun1)
+summary(a)
+plot(a)
+data.blk$shoot<-a
+
+# 10. Common Assault Calls for Service
+raw<-fread(crime.files[3])
+raw$assault<-str_extract(raw$description,regex("(.*?)COMMON assault(.*?)",ignore_case = T))
+raw<-raw[complete.cases(raw),]
+x.lat<-str_extract(raw$location,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw$location,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+cordata<-data.frame(long=x.long,lat=x.lat)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata[,1:2],dataf.block,k=5000)
+a<-apply(dist$nn.dists,1,FUN=fun1)
+data.blk$comassault<-a
+
+# 11. Automobile Accident Calls for Service
+raw<-fread(crime.files[3])
+raw$assault<-str_extract(raw$description,regex("(.*?)accident(.*?)",ignore_case = T))
+raw<-raw[complete.cases(raw),]
+x.lat<-str_extract(raw$location,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw$location,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+cordata<-data.frame(long=x.long,lat=x.lat)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata[,1:2],dataf.block,k=5000)
+a<-apply(dist$nn.dists,1,FUN=fun1)
+data.blk$autoacci<-a
+
+# 12. Liquor store density 1km
+files<-list.files("../project_data_reference/project1_data/Health_csv/", full.names = T)
+raw<-fread(files[10])
+x.lat<-str_extract(raw$`Location 1`,regex("\\((.*?),",ignore_case=T))
+x.lat<-as.numeric(gsub("\\(|,|\\)","",x.lat))
+x.long<-str_extract(raw$`Location 1`,regex(",(.*?)\\)",ignore_case=T))
+x.long<-as.numeric(gsub("\\(|,|\\)","",x.long))
+cordata<-data.frame(long=x.long,lat=x.lat)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata[,1:2],dataf.block,k=nrow(cordata))
+fun1<-function(x){
+  return(sum(x<=0.009))
+}
+a<-apply(dist$nn.dists,1,FUN=fun1)
+data.blk$liquor<-a
+summary(a)
+#plot(a)
+
+# 13. Distance to the neares grocery store
+files<-list.files("../project_data_reference/project1_data/Health_csv/", full.names = T)
+raw<-fread(files[5])
+loc<-raw$`Location 1`
+loc<-gsub("\nBaltimore, MD\n","",loc)
+cordata<-geocode(loc)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata[,1:2],dataf.block,k=1)
+a<-dist$nn.dists*111
+data.blk$grocery<-a
+
+# 14. Distance to the neares hospital
+raw<-fread(files[8])
+loc<-gsub("\nBaltimore, MD\n","",raw$`Location 1`)
+cordata<-geocode(loc)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata[,1:2],dataf.block,k=1)
+a<-dist$nn.dists*111
+data.blk$hospital<-a
+
+# 15. Nusring home
+raw<-fread(files[11])
+loc<-gsub("\nBaltimore, MD\n","",raw$`Location 1`,ignore.case = T)
+cordata<-geocode(loc)
+cordata<-cordata[complete.cases(cordata),]
+dist<-nn2(cordata[,1:2],dataf.block,k=1)
+a<-dist$nn.dists*111
+data.blk$nursing<-a
+
+#2008 
+#map <- readOGR("../project_data_reference/project1_data/housing&development_csv/Housing_20Typology_202008","housing_typology_2008")
+#housing08 <- spTransform(map, CRS("+proj=longlat +datum=WGS84"))
+
+#2014 housing market typology
+map <- readOGR("../project_data_reference/project1_data/housing&development_csv/2014 Housing Market Typology/","geo_export_b64f68c4-192d-45a6-95f8-944d17d4be06")
+housing14 <- spTransform(map, CRS("+proj=longlat +datum=WGS84"))
+housing14@data$comid<-seq(1:nrow(housing14))
+housing14@data$class<-str_extract(housing14@data$hmt,regex("[A-H] "))
+housing14@data$class<-gsub(" ","",housing14@data$class)
+housing14@data$class<-gsub("A","1",housing14@data$class)
+housing14@data$class<-gsub("B|C","2",housing14@data$class)
+housing14@data$class<-gsub("D","3",housing14@data$class)
+housing14@data$class<-gsub("E|F","4",housing14@data$class)
+housing14@data$class<-gsub("G|H","5",housing14@data$class)
+
+
+temp<-over(bal.blk,housing14)
+data.blk$msp<-temp$msp1214_ci  # Median residential home sales price
+data.blk$homesales<-temp$csp1214_ci # Count of residential home sales
+data.blk$houseunit<-temp$chu_14_ci # Count of housing units
+data.blk$vacparcel<-temp$cvac_14_ci # count of vacant housing parcels ***
+data.blk$vaclot<-temp$cvalt14_ci#  CVAC_14_CI: count of vacant housing parcels 
+data.blk$class<-temp$class
+data.blk$hmt<-temp$hmt
+
+# average house unit per block
+hunit<-group_by(temp,comid)
+hunit<-mutate(hunit,n=n())
+data.blk$hnuit<-data.blk$houseunit/hunit$n
+
+### Integrate to neighbor
+int<-data.blk%>% group_by(nei_id) %>%
+  mutate(acres_nei=sum(acres))
+data.blk$acres_nei<-int$acres_nei
+
+for (i in 1:55){
+  data<-over(housing14,bal.nei[i,])
+  data<-data[complete.cases(data),]
+  result<-as.numeric(names(sort(-table(housing14@data[as.numeric(rownames(data)),]$class)))[1])
+  if(i==1){
+    class.nei<-result
+  }
+  if(i!=1){
+    class.nei<-c(class.nei,result)
+  }
+}
+data.nei$class<-class.nei
+bal.nei@data<-inner_join(bal.nei@data,data.nei)
+
+
+data.nei<-matrix(NA,nrow=55,ncol=24)
+data.nei[,1]<-seq(1:55)
+for (i in 1:max(data.blk$nei_id)){
+  data<-data.blk[data.blk$nei_id==i,]
+  for(j in 1:23){
+    var<-sum(data[,(j+6)]*(data$acres/data$acres_nei))
+    data.nei[i,(j+1)]<-var
+  }
+}
+data.nei<-as.data.frame(data.nei)
+colnames(data.nei)<-names(data.blk)[c(11,7:29)]
+data.nei$CSA2010<-id.nei$name
+save(data.blk,file="blkdata_1.rda")
+save(data.nei,file="neidata_1.rda")
+```
