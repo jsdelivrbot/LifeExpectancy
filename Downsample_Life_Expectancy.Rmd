@@ -1,0 +1,432 @@
+---
+title: "Downsample Life Expectancy on Single Block Level in Baltimore City"
+author: "Yifan Zhou"
+output: pdf_document
+fontsize: 11pt
+linestretch: 1
+geometry: margin=0.8in 
+---
+  
+```{r load package,warning=FALSE,message=FALSE,results='hide',echo=FALSE}
+library(sp)
+library(splines)
+library(lmtest)
+library(RANN)
+library(dplyr)
+library(plyr)
+library(ggplot2)
+library(ggmap)
+library(maps)
+library(maptools)
+if (!require(gpclib)) install.packages("gpclib", type="source")
+#gpclibPermit()
+library(rgdal)
+library(rgeos)
+library(grid)
+library(gridExtra)
+library(readxl)
+library(stringr)
+library(data.table)
+options(digits = 7)
+```
+
+```{r load spatial data, fig.height=8,fig.width=8, warning=FALSE, message=FALSE,echo=F}
+load("./data/bal_block.rda")
+load("./data/bal_neighbor.rda")
+
+# add Neighborhood label to each block
+bal.blk@data$Neighborhood<-over(bal.blk,bal.nei)$CSA2010
+```
+
+\begin{spacing}{1.5}
+\textbf{{\Large 1. Introduction}}
+\end{spacing}
+Health is directly related to health care, health behaviors and family health history, and it's also heavily influenced by socioeconomic position, race-ethnicity, and social cohesion$^1$. Life expectancy is the average number of years a newborn can expect to live, assuming she or he experiences the currently prevailing rates of death throughout her or his lifespan$^2$. Life expectancy is often used as a fator to reflect health condition. 
+
+According to 2011 Neighborhood Health Profile$^3$, there are lots of variations in life expectancy between different neighborhoods in Baltimore City. Even two nearby neighborhoods could have a huge gap in life expectany. For example, life expectancy is 77.1 in Inner Harbor/Federal Hill, while it's 63.9 in its nearby neighborhood Downtown/Seton Hill. 
+Therefore, the inequality in Baltimore has been a big issue.
+
+In this study, we focus on downsampling life expectancy on block level. Our goal is to develop a model for predicting life expectancy in Baltimore City down to single block resolution with estimates of uncertainty. 
+\begin{spacing}{1.5}
+\textbf{{\Large 2. Material}}
+
+\textbf{{\large 2.1 Definition}}
+\end{spacing}
+
+For geographic information in Baltimore, we use Tiger shape files from Census 2010 data (available at the Maryland Department of Planning websit$^4$), from which we obtained block ID, coordinates and footprint for each block. There are 13488 blocks defined in this way. We use the coordinate of latitude and longitude for the polygon center of each block as its location. To obtain coordinates of latitude and longitude, we use Google Maps API through R package "ggmap"$^5$. "RANN"$^6$ package is also used to find the nearest location. Then we use "sp"$^{7,8}$ package to calculate distance between two locations, which returns the Euclidean distance between two polygon centers on map.
+\begin{spacing}{1.5}
+\textbf{{\large 2.2 Data}}
+\end{spacing}
+
+We use life expectancy data in 2014 for Baltimore City on neighborhood level as the outcome variable (available at BNIA-J websit$^9$). There are 55 neighborhoods in Baltimore City, we also use Census 2010' Tiger shape files to get the geographic information of those neighborhoods.
+
+Since life expectancy is associated with many factors such as family disease history, individual health condition, environment and socioeconomic factors$^{10}$. We consider those following factors as the potential predictors for life expectancy: Health environment, housing and development, financial condition, education, culture and art, public safety. Since it's impossible to directly obtain the those factors for each block, we generate independent variabes for each block in R program. Table 1 lists the independent variables used in our final model and how they are generated base on each block's location. All original datasets are available at "Open Baltimore"$^{11}$.
+
+\begin{table}[ht]
+\scriptsize
+\centering
+\textbf{\caption{Independent variables on block level}}
+\begin{tabular}{lll}
+  \hline
+Variable & Description & Original Dataset \\ 
+  \hline
+ neighborhood &  Indicator of which neighborhood the block belongs to & Tiger shape files from Census 2010\\ 
+ arrest rate &  Number of people arrested in the surrounding area (220m)  &  BPD Arrests Data  \\ 
+ shooting rate &   Number of shootings in the surrounding area (220m)  &  BPD Part 1 Victim Based Crime Data  \\ 
+crime rate &  Number of crimes in the surrounding area (2km)  &  BPD Part 1 Victim Based Crime Data  \\ 
+ distance to library  &  Distance (km) to the nearest library  &  Baltimore City Public Libraries  \\ 
+ distance to hospital &  Distance (km) to the nearest hospital  &  Baltimore City Hospitals  \\ 
+liquor store density &  Number of liquor stores in the surrounding area (1km) &  Liquor Licenses  \\ 
+ pubart density &  Number of public arts in the surrounding area (2km)  &  Designated Landmarks, Museums, Monuments  \\ 
+ vacant building density  &  Number of vacant buildings in the surrounding area (350m) &  Vacant Builidngs  \\ 
+ property tax  &  Average Real property tax of the neares 3 houses  &  Real Property Taxes  \\ 
+ stressed &  Indicator of the residential market condition: "0" for cluster &  2014 Housing Market Typology \\ 
+  &  A/B/C/D, means "Popular on the market", "1" for cluster\\
+  &  E/F/G/H, means "Stressed on the market" \\ 
+   \hline
+\end{tabular}
+\end{table}
+For independent variables on neighborhood level, it will cause trouble if we generate them using the same pipeline for generating block level variables, because the area of neighborhood is much larger than the area of block. In stead, we integrated the variables for blocks in the same neighborhood to obtain predictors on neighborhood level. Since there is no available dataset containing popluation information for each block, we choose area of blocks as the unit to do the integration.
+For all numeric independent variables on neighborhood level, we calculate the weighted average of variables for blocks in each neighborhood, and the weight for each block is in proportion to the acre:
+$$ var_i^{N} = \sum_{\text{block j in neighboor i}} var_j \times \frac{\text{acre}_j}{\sum_{\text{block j in neighboor i}}\text{acre}_j}\;\;, \;\;\;\; i=1,2,...,55$$
+For the indicator of residential market condition--- stressed, we use its mode for blocks in each neighborhood as the independent variable on neighborhood level.
+
+\begin{spacing}{1.5}
+\textbf{{\Large 3. Method}}
+\end{spacing}
+
+We want to predict life expectancy for the 13488 blocks in Baltimore City. However, we could only obtain the outcome variable on neighborhood level. Therefore we couldn't build up the prediction model directly on block level. In this project, we first train a prediction model with neighborhood level training data, then we plug in the block level predictors into this model and obtain the prediction values for each block. Since the outcome variable is continuous with a relatively narrow range (from 67.16 to 89.62 years) and a relatively small standard deviation which is 4.53 years, we decide to fit a linear model.
+
+\begin{spacing}{1.5}
+\textbf{{\large 3.1 Model}}
+\end{spacing}
+
+Appropriate data transformations would be helpful to improve model performance. We did log transformation for property tax, vacant building density and arrest rate since those variables are highly skewed.
+From the exploratory plots in Fig 1, we could see life expectancy has non-linear relationships with log property tax, log vacant building density, shooting rate, distance to hospital and distance to library. Since only the results of likelihood ratio tests for shooting rate don't supports the non-linear tranformation of shooting rate, we fianlly include non-linear terms for those variables except shooting rate.
+Also, we include the interaction of the residential market indicator, stressed, with public art density, liquor store density, non-linear terms of crime rate, distance to library and distance to hospital.
+
+Then, we fit a full model and performe several likelihood ratio tests to drop non-significant terms and decide the fianl model. The final predition model is a linear regression model with life expectancy as the outcome, selected predictors of this model contain following terms: Indicator of neighborhood, log of arrest rate, shooting rate, dummy variable of stressed, public art density, natrual spline for log of property tax with knots at 6 and 7.2, natrual spline with 2 degrees of freedom for crime rate and log of vacant buildings density, natrual spline for distance to hospital with 3 degrees of freedom and their interaction terms with stressed, natrual spline for distance to library with 2 degrees of freedom and their interaction terms with stressed.
+```{r EDA plot,integrate block data,out.width='250px', fig.align='center', warning=FALSE, message=FALSE, dev="png", dpi=300, echo=F}
+load("./data/blkdata_1.rda")
+load("./data/neidata_1.rda")
+
+# select variables
+dd.nei<-data.nei%>% select(CSA2010,nei_id,LifeExp,artorg:hnuit,class,protax,library=lib)
+dd.nei<-dd.nei %>% select(-logprotax,-splevent,-comassault,-autoacci,-grocery,-vacparcel,-vaclot,-homesales, -hnuit, -artorg, -nursing)
+# log transform
+dd.nei<- dd.nei%>% mutate(logprotax=log(protax+1),logarrest=log(arrest+1),logmsp=log(msp+1),logvacbuid=log(numb_vacbuild+1))
+dd.nei<-dd.nei %>% select(-arrest,-msp,-numb_vacbuild)
+dd.nei$class<-as.numeric(dd.nei$class)
+class45<-ifelse((dd.nei$class>=4 & dd.nei$class<=5),1,0)
+dd.nei$stress<-class45
+# do the same piple for block data
+dd.blk<-data.blk %>% 
+  select(blk,CSA2010, nei_id, artorg, numb_crime, logprotax, numb_vacbuild, lib, pubart, splevent, arrest, arrest_juv, shoot, comassault, autoacci, liquor, grocery, hospital, nursing, msp, homesales, vacparcel, vaclot, hnuit, class, protax,library=lib) %>%
+  select(-logprotax,-splevent,-comassault,-autoacci,-grocery,-vacparcel,-vaclot,-homesales, -hnuit, -artorg, -nursing) %>%
+  mutate(logprotax=log(protax+1), logarrest=log(arrest+1),logmsp=log(msp+1),logvacbuid=log(numb_vacbuild+1)) %>%
+  select(-arrest,-msp,-numb_vacbuild)
+dd.blk$class<-as.numeric(dd.blk$class)
+class45<-ifelse((dd.blk$class>=4 & dd.blk$class<=5),1,0)
+dd.blk$stress<-class45
+
+#EDA Plots
+eda.class<-function(data,xvar1,xvar0,xlab,main){
+  cex=1.4
+  lwd=2
+  plot(x=xvar1,y=data[data$stress==1,]$LifeExp,col="orange",cex=cex,pch=16,ylab=NA,xlab=xlab,
+       yaxt="n",xaxt="n",cex.lab=cex,ylim=c(65,90))
+  axis(1,cex.axis=0.5,tck=-.01)
+  lines(loess.smooth(x=xvar1,y=data[data$stress==1,]$LifeExp, family = "gaussian",span=1),col="orange",lwd=lwd)
+  points(x=xvar0,y=data[data$stress==0,]$LifeExp,col=rgb(0.2,0.5,0.8,0.9),cex=cex,pch=16)
+  lines(loess.smooth(x=xvar0,y=data[data$stress==0,]$LifeExp, family = "gaussian",span=1),col=rgb(0.2,0.5,0.8,0.9),lwd=lwd)
+  legend("topright",legend=main,cex=cex,bty="n")
+}
+eda.noclass<-function(data,xvar1,xvar0,xlab,main){
+  cex=1.4
+  lwd=2
+  plot(x=xvar1,y=data[data$stress==1,]$LifeExp,col="orange",cex=cex,pch=16,xlab=xlab,ylab="Life expectancy",
+       cex.lab=cex,yaxt="n",xaxt="n",ylim=c(65,90))
+  axis(1,cex.axis=0.5,tck=-.01)
+  axis(2,cex.axis=0.5,tck=-.01)
+  points(x=xvar0,y=data[data$stress==0,]$LifeExp,col=rgb(0.2,0.5,0.8,0.9),cex=cex,pch=16)
+  lines(loess.smooth(x=c(xvar0,xvar1),y=c(data[data$stress==0,]$LifeExp, data[data$stress==1,]$LifeExp),span=0.5, family = "gaussian"),col="grey",lwd=lwd)
+  legend("topright",legend=main,cex=cex,bty="n")
+}
+par(mar=c(2,2,0.1,0),mgp=c(0.8,0.05,0),fin=c(1,1.5))
+layout(matrix(c(1:9),nrow=3,ncol=3,byrow=T))
+eda.noclass(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$logprotax,xvar0=dd.nei[dd.nei$stress==0,]$logprotax,xlab="log of property tax", main="(a)")
+legend("topleft",legend=c("Stressed","Popular"),col=c("orange",rgb(0.2,0.5,0.8,0.9)),pch=16,cex=0.9)
+eda.class(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$pubart,xvar0=dd.nei[dd.nei$stress==0,]$pubart,xlab="public art density", main="(b) ")
+eda.class(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$numb_crime,xvar0=dd.nei[dd.nei$stress==0,]$numb_crime,xlab="crime rate", main="(c) ")
+eda.noclass(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$logarrest,xvar0=dd.nei[dd.nei$stress==0,]$logarrest,xlab="log of arrest rate", main="(d) ")
+eda.class(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$liquor,xvar0=dd.nei[dd.nei$stress==0,]$liquor,xlab="liquor store density", main="(e) ")
+eda.class(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$library,xvar0=dd.nei[dd.nei$stress==0,]$library,xlab="distance to library /km", main="(f) ")
+eda.noclass(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$logvacbuid,xvar0=dd.nei[dd.nei$stress==0,]$logvacbuid,xlab="log of vacant building density", main="(g) ")
+eda.class(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$hospital,xvar0=dd.nei[dd.nei$stress==0,]$hospital,xlab="distance to hospital /km", main="(h) ")
+eda.class(data=dd.nei,xvar1=dd.nei[dd.nei$stress==1,]$shoot,xvar0=dd.nei[dd.nei$stress==0,]$shoot,xlab="shooting rate", main="(i) ")
+```
+\begin{center}
+\begin{spacing}{0.8}
+{\footnotesize \textbf{Fig 1: Relationship between life expectancy against predictors on neighborhood level.} Solid lines are smooth curves fitted by Loess with gaussian family (span=0.5). Grey lines are based on all observations; Orange/blue indicates whether the residential market condition is "stressed" or not.
+\textbf{(a)} Life expectancy against log of property tax; 
+\textbf{(b)} Life expectancy against public art density; 
+\textbf{(c)} Life expectancy against crime rate;
+\textbf{(d)} Life expectancy against log of arrest rate;
+\textbf{(e)} Life expectancy against liquor store density;
+\textbf{(f)} Life expectancy against distance to library;
+\textbf{(g)} Life expectancy against log of vacant building density;
+\textbf{(h)} Life expectancy against distance to hospital;
+\textbf{(i)} Life expectancy against shooting rate;
+}
+\end{spacing}
+\end{center}
+```{r variable selection, warning=FALSE, message=FALSE ,echo=F, results="hide"}
+# naive model
+fit0<-lm(data=dd.nei,LifeExp ~ nei_id + logprotax  + logarrest + logvacbuid + shoot + numb_crime*stress + library*stress + liquor*stress + hospital*stress + pubart*stress)
+
+#spline logprotax (knots 6, 7.2)
+fit1<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + logvacbuid + shoot+ numb_crime*stress + library*stress + liquor*stress + hospital*stress + pubart*stress)
+lrtest(fit0,fit1) # *
+
+#spline logvacbuid (df=2)
+fit2<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ numb_crime*stress + library*stress + liquor*stress + hospital*stress + pubart*stress)
+lrtest(fit1,fit2) # *
+
+#spline logarrest
+fit3<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + ns(logarrest,3) + ns(logvacbuid,2) + shoot+ numb_crime*stress + library*stress + liquor*stress + hospital*stress + pubart*stress)
+lrtest(fit2,fit3) #not sig
+
+#spline shoot
+fit3<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + ns(shoot,3) + numb_crime*stress + library*stress + liquor*stress + hospital*stress + pubart*stress)
+lrtest(fit2,fit3) #not sig
+
+#spline library (df=2)
+fit3<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ numb_crime*stress + ns(library,2)*stress + liquor*stress + hospital*stress + pubart*stress)
+lrtest(fit2,fit3) # **
+fit3.1<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ numb_crime*stress + ns(library,3)*stress + liquor*stress + hospital*stress + pubart*stress)
+lrtest(fit2,fit3.1) # not sig
+
+#spline hospital
+fit4<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ numb_crime*stress + ns(library,2)*stress + liquor*stress + ns(hospital,3)*stress + pubart*stress)
+lrtest(fit3,fit4) # ***
+
+#spline liquor
+fit5<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ numb_crime*stress + ns(library,2)*stress + ns(liquor,3)*stress + ns(hospital,3)*stress + pubart*stress)
+lrtest(fit4,fit5) # not sig
+
+#spline numb_crime  df=2
+fit5<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ ns(numb_crime,2)*stress + ns(library,2)*stress + liquor*stress + ns(hospital,3)*stress + pubart*stress)
+lrtest(fit4,fit5) # *
+fit5.1<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ ns(numb_crime,3)*stress + ns(library,2)*stress + liquor*stress + ns(hospital,3)*stress + pubart*stress)
+lrtest(fit4,fit5.1)
+lrtest(fit5,fit5.1)
+
+#spline pubart
+fit6<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ ns(numb_crime,2)*stress + ns(library,2)*stress + liquor*stress + ns(hospital,3)*stress + ns(pubart,3)*stress)
+lrtest(fit5,fit6) #not sig
+summary(fit5)
+
+#Full model is fit5
+
+# drop liquor:stress
+fit6<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ ns(numb_crime,2)*stress + ns(library,2)*stress + liquor + ns(hospital,3)*stress + pubart*stress)
+lrtest(fit6,fit5) # not sig
+summary(fit6)
+
+#drop pubart:stress
+fit7<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ ns(numb_crime,2)*stress + ns(library,2)*stress + liquor + ns(hospital,3)*stress + pubart)
+lrtest(fit7,fit6) # not sig
+summary(fit7)
+
+#drop numb_crime:stress
+fit8<-lm(data=dd.nei,LifeExp ~ nei_id + ns(logprotax,knots = c(6,7.2)) + logarrest + ns(logvacbuid,2) + shoot+ ns(numb_crime,2) + ns(library,2)*stress + liquor + ns(hospital,3)*stress + pubart)
+lrtest(fit8,fit7) # not sig
+summary(fit8)
+
+# final model:
+fit<-fit8
+```
+\begin{spacing}{1.5}
+\textbf{{\large 3.2 Assumptions Checking}}
+\end{spacing}
+
+First, we check for the independence assumption by checking the correlation between two neighborhoods' residuals, and plot residuals against all the continuous predictors. Results shows there is no significant correlation between residuals themselve and predictors.
+Then, we check the constant variance assumption by plotting residuals against fitted values. Although the spread of the residuals is a little wide for fitted values larger than 80 which may be caused by the small number of training data, we don't think there is a violation of equal variance assumption. 
+Q-Q plot demonstrates the normality and the plots of residuals against predictors and their smooth curve defence the linearity assumption. The adjusted r-squared is 0.851 for the fianl model which demonstrates the goodness of fit in this model. All those checking procedures show this prediction model is reasonable and reliable. (Results are shown in Appendix)
+
+\begin{spacing}{1.5}
+\textbf{{\Large 4. Result}}
+\end{spacing}
+
+we obtain the estimated life expectancy for each block using predictors on block level and the model fitted above. However, not all of the 13488 blocks are residential ares (they could be commercial or industrial areas, green space or institutional areas), therefore we treat the outcome variables in those blocks as NULL value, which are displayed by grey area on the map. Fig 2 (a) shows the estimated life expectancy down to single block level. 
+
+To measure the uncertainty of the estimated life expectancy for each block, we calculate the 95\% confidence interval for predited values. Fig 2 (b) and (c) are the lower bound and upper bound of the 95\% confidence interval for life expectancy, which also display the uncertainty of the esimated results. 
+
+In Fig 2, plenty of block spefic patterns could be eaily recognized, especially in downtown, East Balimore and West Baltimore areas. Even two nearby blocks would have very different estimated life expectancy. Meanwhile, the uncertainty of the estimated values varies a lot in those areas. And most of the blocks with large variation of life expectancy are located in West Baltimore and East Baltimore area.
+
+```{r get result,fig.height=4,fig.width=5, fig.align='center', warning=FALSE, message=FALSE,dev="png", dpi=300,echo=F}
+#generate prediction result
+pred<-predict.lm(fit,newdata=dd.blk,type="response",interval = "confidence")
+dd.blk$LE.pred<-as.numeric(pred[,1])
+sd<-predict.lm(fit,newdata=dd.blk,type="response",se.fit = T)$se.fit
+dd.blk$LE.se<-sd
+dd.blk$LE.lci<-dd.blk$LE.pred-1.96*dd.blk$LE.se
+dd.blk$LE.uci<-dd.blk$LE.pred+1.96*dd.blk$LE.se
+dd.blk1<-dd.blk[complete.cases(dd.blk),]
+#make sure plots have same color scale
+dd.blk[13472,]$LE.pred=min(dd.blk1$LE.lci)
+dd.blk[13472,]$LE.lci=max(dd.blk1$LE.uci)
+dd.blk[13472,]$LE.uci=max(dd.blk1$LE.uci)
+dd.blk[13471,]$LE.pred=max(dd.blk1$LE.uci)
+dd.blk[13471,]$LE.uci=min(dd.blk1$LE.lci)
+dd.blk[13471,]$LE.lci=min(dd.blk1$LE.lci)
+dd.blk.select<- dd.blk %>% select(blk,LE.pred,LE.lci,LE.uci)
+dd.blk1<-dd.blk.select[complete.cases(dd.blk.select),]
+bal.blk@data<-left_join(bal.blk@data,dd.blk1,by=c("BLK2010"="blk"))
+
+# plot result on map
+CenterOfMap <- geocode(" 39.299768,-76.614929")
+Baltimore <- get_map(c(lon=CenterOfMap$lon, lat=CenterOfMap$lat),zoom = 12, maptype = "road", source = "google")
+BaltimoreMap <- ggmap(Baltimore)
+shpdata<-bal.blk
+shpdata@data$id = rownames(shpdata@data)
+shpdata.points = fortify(shpdata, region="id")
+shpdata.df = join(shpdata.points, shpdata@data, by="id")
+```
+
+```{r display result on map, out.height='300px', fig.align='center', warning=FALSE, message=FALSE,dev="png", dpi=400,echo=F}
+result.blk<-BaltimoreMap+
+  geom_polygon(aes(long,lat,group=group,fill=LE.pred),data=shpdata.df,alpha=0.9,color="black",size=0.05)+ 
+  scale_fill_gradient(name="Predicted Life Expectancy",low = "#ffffcc", high = "#ff4444", space = "Lab", na.value = "grey50",guide = "colourbar")+
+  ggtitle("(a)")+
+  ylab("latitude")+xlab("longitude")+
+  theme(text = element_text(size=8),legend.position="right")
+
+lci.blk<-BaltimoreMap+
+  geom_polygon(aes(long,lat,group=group,fill=LE.lci),data=shpdata.df,alpha=0.9,color="black",size=0.05)+ 
+  scale_fill_gradient(name=NA,low = "#ffffcc", high = "#ff4444", space = "Lab", na.value = "grey50",guide = "colourbar")+
+  ggtitle("(b)")+
+  ylab("latitude")+xlab("longitude")+
+  theme(text = element_text(size=5),legend.position="none")
+
+uci.blk<-BaltimoreMap+
+  geom_polygon(aes(long,lat,group=group,fill=LE.uci),data=shpdata.df,alpha=0.9,color="black",size=0.05)+ 
+  #scale_fill_gradientn(colours=mycolors)+
+  scale_fill_gradient(name=NA,low = "#ffffcc", high = "#ff4444", space = "Lab", na.value = "grey50",guide = "colourbar")+
+  ggtitle("(c)")+
+  ylab("latitude")+xlab("longitude")+
+  theme(text = element_text(size=5),legend.position="none")
+result.blk
+```
+
+```{r display ci on map, out.height='250px',, fig.align='center', warning=FALSE, message=FALSE,dev="png", dpi=400,echo=F}
+grid.arrange(lci.blk,uci.blk,ncol=2)
+
+#compare result for JHU campus
+dataf.block<-data.frame(long=data.blk$long,lat=data.blk$lat)
+get.pred<-function(address){
+  cor<-geocode(address)
+  dist<-nn2(dataf.block,as.matrix(cor),k=1)
+  return(dd.blk[dist$nn.idx,])
+}
+re.carey<-get.pred("100 International Drive, Baltimore, MD 21202")
+re.sph<-get.pred("615 N Wolfe St, Baltimore")
+re.hw<-get.pred("Charles St & 34th St N/B")
+re.pea<-get.pred("18 E Mt Vernon Pl")
+re.bay<-get.pred("401 Anglesea St, Baltimore, MD")
+table<-rbind(re.hw,re.sph,re.pea,re.carey,re.bay)
+table1 <- table %>% select(CSA2010,LE.pred,LE.lci,LE.uci)
+#xtable(table1)
+```
+\begin{center}
+\begin{spacing}{0.8}
+{\footnotesize \textbf{Fig 2: Prediction result of life expectancy in Baitimore City with 95\% confidence interval}. Grey areas are non-residential space. \textbf{(a)} Estimated life expectancy on block level; \textbf{(b)} Lower bound on the confidence interval of the estimated life expectancy; \textbf{(b)} Upper bound on the confidence interval of the estimated life expectancy;}
+\end{spacing}
+\end{center}
+There is one interesting result, we calculated the estimated life expectancy of the nearest block from 5 Johns Hopkins campus and list them on Table 2 below. Frome Table 2, we could see homewood campus has the longest estimated life expectancy, 87 years with 95% confidence interval [82.8, 91.2]. The prediction result for Bloomberg School of Public Health is 72.5 years with confidence interval [69.1, 75.9], which is slightly lower than the mean of life expectancy among all blocks in Baltimore City (74.08 years).
+Those results are consistent with the campus saftey conditions.
+Carey Busniess School has the shortest estimated life expectancy with a large uncertainty, which is 65.13 years with 95% confidence interval [59.2, 71.1]. One possible reason is this block has a very large crime rates 7280, comparing with the mean crime rate 4170 and the 75% quantile 6160 among all blocks.
+
+\begin{table}[ht]
+\scriptsize
+\centering
+\textbf{\caption{Prediction results for 5 campus of Johns Hopkins University}}
+\begin{tabular}{lllll}
+  \hline
+Campus & Neighborhood & Life Expectancy & 95 Confidence Interval & Address\\ 
+  \hline
+Homewood Campus& Cross-Country/Cheswolde & 87.0 & [82.8, 91.2] & Charles St \& 34th St N/B\\ 
+School of Public Health & Oldtown/Middle East & 72.5 & [69.1, 75.9] & 615 N Wolfe St\\ 
+Peabody & Midtown & 73.0 & [68.4, 77.6] & 18 E Mt Vernon Pl\\ 
+Carey Business School & Harbor East/Little Italy & 65.1 & [59.2, 71.1] & 100 International Drive\\ 
+Bayview Medical Center, & Orangeville/East Highlandtown & 68.6 & [63.2, 74.0] & 401 Anglesea St\\ 
+   \hline
+\end{tabular}
+\end{table}
+
+```{r integrate result on neighbor level, fig.height=10, fig.width=10, fig.align='center', warning=FALSE, message=FALSE,dev="png", dpi=200 ,echo=F}
+dd.blk$acre<-data.blk$acres
+dd.blk1<-dd.blk[complete.cases(dd.blk),]
+for (i in 1:55){
+  data<-dd.blk1[dd.blk1$nei_id==i,]
+  meanLE<-mean(data$LE.pred)
+  meanSE<-mean(data$LE.se)
+  sdLE<-sd(data$LE.pred)
+  sumacre<-sum(data$acre)
+  weisd<-sum(data$LE.se*data$acre/sumacre)
+  weLE<-sum(data$LE.pred*data$acre/sumacre)
+  dataf<-data.frame(nei_id=i,neighborhood=data$CSA2010[1],mean=meanLE,sd=sdLE,weimean=weLE,weisd=weisd,se=meanSE)
+  if(i==1){
+    result<-dataf
+  }
+  if(i!=1){
+    result<-rbind(result,dataf)
+  }
+}
+options(digits = 2)
+table1<-left_join(result,dd.nei,by="nei_id")
+table<- table1 %>% select(neighborhood,LifeExp,weighted_lifeExp=weimean,weighted_SE=weisd) %>%  
+ arrange(weighted_lifeExp) 
+table.se<- table1 %>% select(neighborhood,LifeExp,weighted_lifeExp=weimean,weighted_SE=weisd) %>%  
+  mutate(change=LifeExp-weighted_lifeExp) %>% arrange(weighted_SE)
+```
+
+We also calculate the weighted average of estimated life expectancy of blocks within each neighborhood and  compare them with the original data on neighborhood level from Census 2010 (See Table 3 in Appendix). After integrating the estimated life expectancy, we could see `r as.character(table$neighborhood[1])` has the lowest weighted average life expectancy `r as.numeric(table$weighted_lifeExp[1])` years, and `r as.character(table$neighborhood[55])` is the highest one with estimated life expectancy `r as.numeric(table$weighted_lifeExp[55])` years. This result is rational according to the previous discussion. For the uncertainty of predictions, `r as.character(table.se$neighborhood[55])` has the largest weighted average of standard errors (`r table.se$weighted_SE[55]` years), and `r as.character(table.se$neighborhood[1])` has the smallest one (`r table.se$weighted_SE[1]` years).
+
+\begin{spacing}{1.5}
+\textbf{{\Large 5. Discussion}}
+\end{spacing}
+
+In this study, we build up an approach to downsample life expectancy into block level. Then we use this model to predict life expectancy in 13488 blocks in Baltimore City and measure the uncertainty using 95\% confidence interval. We also check for the assumptions to verify the reliability of this model.
+
+The patterns in Fig 2 shows the inequality in Baltimore is not only exists between different neighborhoods, it also exist among different blocks. Even for blocks on the same street, they may have a wide range of life expectancy. And the variation of the life expectancy between blocks is much larger in Downtown, East Baltimore and West Baltimore than other areas. These results are consistent with the realistic society in Baltimore City.
+
+There are still some future works could be done in this research question. Since we could only obtain life expectancy data for 55 neighborhoods, the training datasets is relatively small for building a good model. One potential approach is to collect data from cities similar to Baltimore such as Philadelphia and Pittsburgh, then we could enlarge the training dataset and train the prediction model. The other approach is still using life expectancy data of the 55 neighborhoods, but we can use the data on different years and treat them as longitudinal data. In this study, we only use life expectancy data on 2014, and aggregate all data despite of the year. If we could obtain data on different year we could try mix effect model or other methods for longitudinal data analysis.
+\begin{spacing}{1.5}
+\textbf{{\Large 6. Reference}}
+\end{spacing}
+\begin{spacing}{0.7}
+{\footnotesize 
+1. Woolf SH BP. Where health disparities begin: The role of social and economic determinants--- and why current policies could make matters worse. Health Affairs: 2011.30:1852-1859
+
+2. Wikipedia: https://en.wikipedia.org/wiki/Life\_expectancy
+
+3. Ames A, Evans M, Fox L, Milam A, Petteway R, Rutledge R. 2011 Neighborhood Health Profile. Baltimore City Health Department, December 2011 
+
+4. Department of Planning. Census 2010: http://www.mdp.state.md.us/msdc/S5\_Map\_GIS.Shtml
+
+5. D. Kahle and H. Wickham. ggmap: Spatial Visualization with ggplot2. The R Journal, 5(1), 144-161.
+
+6. Sunil Arya, David Mount, Samuel E. Kemp and Gregory Jefferis (2015). RANN: Fast Nearest Neighbour Search (Wraps Arya and Mount's ANN Library). R package version 2.5. https://CRAN.R-project.org/package=RANN
+
+7. Pebesma, E.J., R.S. Bivand, 2005. Classes and methods for spatial data in R. R News 5 (2), http://cran.r-project.org/doc/Rnews/.
+
+8. Roger S. Bivand, Edzer Pebesma, Virgilio Gomez-Rubio, 2013. Applied spatial data analysis with R, Second edition. Springer, NY. http://www.asdar-book.org/
+
+9. Seema Lyer, Brandon Nida, Zak Bickel, et al. Jacob France Institute. BNIA-JFI: http://bniajfi.org/vital\_signs/data\_downloads/
+
+10. Benjamin F. Evans, et al. Neighborhood Characteristics and Health in Baltimore, Maryland. Virginia Commonwealth University Center on Human Needs, 2012
+
+11. Open Baltimore: https://data.baltimorecity.gov/}
+\end{spacing}
+
