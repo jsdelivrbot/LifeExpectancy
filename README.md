@@ -1,6 +1,6 @@
 # Advanced Data Science Project: Downsample Life Expectancy
 
-Writeup report: Downsample_Life_Expectancy.pdf (https://rawgit.com/yzhou12/LifeExpectancy/master/Downsample_Life_Expectancy.pdf)
+Writeup report: Downsample_Life_Expectancy.pdf https://rawgit.com/yzhou12/LifeExpectancy/master/Downsample_Life_Expectancy.pdf
 
 Supplementary document: Appendix.pdf
 
